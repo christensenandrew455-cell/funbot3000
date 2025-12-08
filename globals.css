@@ -1,7 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-body {
-  background: #f5f5f5;
+html, body, #__next {
+  height: 100%;
 }
+
+* { box-sizing: border-box; }
