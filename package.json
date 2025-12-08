@@ -8,13 +8,8 @@
     "start": "next start"
   },
   "dependencies": {
-    "next": "15.0.3",
-    "react": "latest",
-    "react-dom": "latest"
-  },
-  "devDependencies": {
-    "autoprefixer": "latest",
-    "postcss": "latest",
-    "tailwindcss": "latest"
+    "next": "14.2.5",
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
   }
 }
