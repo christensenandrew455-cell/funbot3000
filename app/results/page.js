@@ -1,39 +1,54 @@
 // app/results/page.js
 export default async function ResultsPage({ searchParams }) {
-  // Pass all search params directly to your API
-  const res = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    // send the form data exactly as-is
-    body: JSON.stringify(searchParams),
-    cache: "no-store",
-  });
+  let data = null;
+  let error = null;
 
-  const data = await res.json();
+  try {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_VERCEL_URL ? '' : ''}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(searchParams),
+      cache: "no-store",
+    });
 
-  const result = data?.result || "No activity generated.";
+    data = await res.json();
+  } catch (err) {
+    error = err.message;
+  }
+
+  const result = data?.result;
 
   return (
     <div style={{ padding: "30px", fontFamily: "Arial, sans-serif", lineHeight: "1.6" }}>
       <h1>Your Fun Activity 🎉</h1>
 
-      <h3>Generated just for you:</h3>
+      {error && (
+        <div style={{ color: "red", marginTop: "20px" }}>
+          <strong>Error:</strong> {error}
+        </div>
+      )}
 
-      <div
-        style={{
-          whiteSpace: "pre-wrap",
-          background: "#f8f8f8",
-          padding: "20px",
-          borderRadius: "8px",
-          border: "1px solid #ddd",
-          marginTop: "10px",
-          fontSize: "1.1rem",
-        }}
-      >
-        {result}
-      </div>
+      {!error && !result && (
+        <p>Generating your activity…</p>
+      )}
 
-      <h3 style={{ marginTop: "30px" }}>Your Choices:</h3>
+      {result && (
+        <div
+          style={{
+            whiteSpace: "pre-wrap",
+            background: "#f8f8f8",
+            padding: "20px",
+            borderRadius: "8px",
+            border: "1px solid #ddd",
+            marginTop: "10px",
+            fontSize: "1.1rem",
+          }}
+        >
+          {result}
+        </div>
+      )}
+
+      <h3 style={{ marginTop: "30px" }}>Your Inputs:</h3>
 
       <div
         style={{
