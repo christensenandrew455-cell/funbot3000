@@ -10,7 +10,7 @@ export async function POST(req) {
     const data = await req.json();
     console.log("Received body:", data);
 
-    // Build prompt
+    // Build prompt parts for optional info
     const promptParts = [];
     if (data.season) promptParts.push(`Season: ${data.season}`);
     if (data.personality) promptParts.push(`Personality: ${data.personality}`);
@@ -19,38 +19,53 @@ export async function POST(req) {
     if (data.activityType) promptParts.push(`Type: ${data.activityType}`);
     if (data.extraInfo) promptParts.push(`Extra info: ${data.extraInfo}`);
 
-    let prompt;
+    let userPrompt;
     if (promptParts.length > 0) {
-      prompt = `Generate a fun activity based on: ${promptParts.join(
+      userPrompt = `Generate a fun activity based on the following optional info: ${promptParts.join(
         ", "
       )}. Include a 1–2 sentence quick description and a detailed paragraph.`;
     } else {
-      prompt =
-        "Generate a random fun activity with a 1–2 sentence quick description and a detailed paragraph.";
+      userPrompt =
+        "Generate a random fun activity for anyone. No input information is required. Include a 1–2 sentence quick description and a detailed paragraph.";
     }
 
-    console.log("Using prompt:", prompt);
+    console.log("Using prompt:", userPrompt);
 
     // Call OpenAI
     const completion = await client.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [
-        { role: "system", content: "You are FunBot 3000, a fun activity generator." },
-        { role: "user", content: prompt }
+        {
+          role: "system",
+          content:
+            "You are FunBot 3000, a fun activity generator. All user input is optional. If no input is provided, generate a fun activity for anyone."
+        },
+        { role: "user", content: userPrompt }
       ],
       max_tokens: 400,
     });
 
     console.log("Raw GPT response:", completion);
 
-    // Safely extract text
-    const text = completion.choices?.[0]?.message?.content?.trim();
+    // Extract text reliably
+    let text = "";
+    try {
+      const msg = completion.choices?.[0]?.message;
+      if (msg) {
+        if (Array.isArray(msg.content)) {
+          text = msg.content.map(c => c.text).join("\n").trim();
+        } else if (msg.content?.text) {
+          text = msg.content.text.trim();
+        } else if (typeof msg.content === "string") {
+          text = msg.content.trim();
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to parse GPT content:", err);
+    }
 
     if (!text) {
-      console.warn("GPT returned empty content, using fallback text.");
-      return NextResponse.json({
-        result: "Oops! GPT did not return a result. Try changing your inputs slightly.",
-      });
+      text = "Oops! GPT did not return a result. Try changing your inputs slightly.";
     }
 
     return NextResponse.json({ result: text });
