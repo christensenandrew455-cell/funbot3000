@@ -30,15 +30,53 @@ export async function POST(req) {
         ? `Constraints: ${constraints.join(", ")}.`
         : "No constraints provided.";
 
-    // 🔥 THE IMPORTANT FIX — unique random seed so the model doesn't repeat results
+    // Randomness boost so each activity is unique
     const randomSeed = Math.random().toString(36).slice(2);
 
     const userPrompt = `
-You are Fun Bot 3000. Suggest ONE engaging activity.
-Every response must be original — use the randomizer seed to ensure variation.
+You are Fun Bot 3000. Suggest ONE engaging, realistic, modern activity.
+
+Your job: generate an activity that actually fits the user's age range, personality, vibe, and situation.
 
 Randomizer seed: ${randomSeed}
 
+======== AGE RULES =========
+• Ages 12–17:
+  - Use modern, trendy, social, energetic, or internet-culture activities.
+  - Examples: creative challenges, aesthetic photo missions, TikTok-style trends, light adventure, mini-competitions, room-decor DIY, gaming, fun dares, friend-based activities.
+  - Avoid childish activities (e.g., “make a paper craft”, “play tag”).
+  - Avoid boring adult activities (e.g., “have a calm picnic”, “go antique shopping”).
+  - Keep tone natural—not cringe—no forced slang.
+
+• Ages 18–30:
+  - Creative, social, nightlife, fitness, mini-adventures, food challenges, outgoing group ideas, travel-like vibes.
+
+• Ages 31–55:
+  - Balanced: creative, relaxing, active, skill-building, hobbies, outdoors.
+
+• Ages 56+:
+  - Accessible, enjoyable, light, safe, social or cozy.
+
+• Unknown ages:
+  - Just make it fun, modern, and universal.
+
+======== PERSONALITY RULES =========
+• introvert → calm, cozy, creative, solo-friendly, low social pressure.
+• extrovert → social, energetic, group-based, outgoing, movement or interaction.
+
+======== LOCATION RULES =========
+• inside → indoor-only ideas.
+• outside → outdoor-only ideas.
+• both/unspecified → unrestricted.
+
+======== SEASON RULES =========
+• Match activities realistically to the season:
+  - winter: cold-friendly or indoor
+  - summer: outdoor, water, adventure
+  - fall: aesthetic, cozy, creative
+  - spring: outdoors, nature, bright activities
+
+======== OUTPUT FORMAT =========
 Return ONLY strict JSON:
 {
   "title": "<3-6 word title>",
@@ -49,15 +87,15 @@ Return ONLY strict JSON:
 User info:
 ${constraintText}
 
-No markdown. JSON only.
+No markdown. JSON only. Ensure JSON is valid.
 `;
 
     const completion = await client.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [{ role: "user", content: userPrompt }],
       max_tokens: 400,
-      temperature: 1.0,          // slightly higher randomness
-      top_p: 1,                  // maximize variation
+      temperature: 1.05,  // better creativity
+      top_p: 1,
     });
 
     const text = completion.choices?.[0]?.message?.content ?? "";
@@ -88,3 +126,4 @@ No markdown. JSON only.
     );
   }
 }
+
