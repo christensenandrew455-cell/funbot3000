@@ -11,6 +11,9 @@ const DEFAULT_FORM = {
   maxAge: "",
   numPeople: "",
   extraInfo: "",
+  country: "",
+  state: "",
+  city: "",
 };
 
 export default function Home() {
@@ -46,11 +49,20 @@ export default function Home() {
       "maxAge",
       "numPeople",
       "extraInfo",
+      "country",
+      "state",
+      "city",
     ];
     return keys.some((k) => (form[k] ?? "") !== "");
   })();
 
+  // call API and save aiResult into sessionStorage
   async function submitToApi(body) {
+    // ensure activityData saved
+    try {
+      sessionStorage.setItem("activityData", JSON.stringify(body));
+    } catch {}
+
     const res = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -58,10 +70,17 @@ export default function Home() {
     });
 
     const data = await res.json();
-    sessionStorage.setItem("aiResult", JSON.stringify(data.aiResult));
+    // save aiResult for results page to read
+    try {
+      sessionStorage.setItem("aiResult", JSON.stringify(data.aiResult));
+    } catch {}
   }
 
   async function handleGenerateRandom() {
+    // explicitly save null activityData to indicate random
+    try {
+      sessionStorage.setItem("activityData", JSON.stringify(null));
+    } catch {}
     await submitToApi({});
     router.push("/results?rand=1");
   }
@@ -172,6 +191,35 @@ export default function Home() {
               }
             />
 
+            {/* Place fields: Country -> show State -> show City */}
+            <div>
+              <input
+                placeholder="Country (type)"
+                value={form.country}
+                onChange={(e) => updateField("country", e.target.value)}
+              />
+            </div>
+
+            {form.country && (
+              <div>
+                <input
+                  placeholder="State / Province (type)"
+                  value={form.state}
+                  onChange={(e) => updateField("state", e.target.value)}
+                />
+              </div>
+            )}
+
+            {form.state && (
+              <div>
+                <input
+                  placeholder="City / Town (type)"
+                  value={form.city}
+                  onChange={(e) => updateField("city", e.target.value)}
+                />
+              </div>
+            )}
+
             {/* Extra notes */}
             <textarea
               placeholder="Anything extra (optional)"
@@ -182,15 +230,6 @@ export default function Home() {
             {anyPersonalizedInput ? (
               <div style={{ display: "flex", gap: 8 }}>
                 <button type="submit">Generate activity</button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setForm(DEFAULT_FORM);
-                    sessionStorage.removeItem("activityData");
-                  }}
-                >
-                  Clear personalization
-                </button>
               </div>
             ) : (
               <div style={{ color: "#555" }}>
