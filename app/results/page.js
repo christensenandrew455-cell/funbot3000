@@ -1,11 +1,14 @@
+// app/results/page.js
 export default function ResultsPage({ searchParams }) {
-  const { result, ...userInputs } = searchParams;
+  // searchParams contains string values
+  // result was encoded on the client; decode it here
+  const rawResult = searchParams?.result ? decodeURIComponent(searchParams.result) : null;
 
   return (
-    <div style={{ padding: "30px", fontFamily: "Arial", lineHeight: "1.6" }}>
+    <div style={{ padding: "30px", fontFamily: "Arial, sans-serif", lineHeight: "1.6" }}>
       <h1>Your Fun Activity 🎉</h1>
 
-      {result ? (
+      {rawResult ? (
         <div
           style={{
             whiteSpace: "pre-wrap",
@@ -14,27 +17,19 @@ export default function ResultsPage({ searchParams }) {
             borderRadius: "8px",
             border: "1px solid #ddd",
             marginTop: "10px",
-            fontSize: "1.1rem",
+            fontSize: "1.05rem",
           }}
         >
-          {result}
+          {rawResult}
         </div>
       ) : (
         <p style={{ color: "red" }}>No AI result received.</p>
       )}
 
-      <h3 style={{ marginTop: "30px" }}>Your Inputs:</h3>
-
-      <div
-        style={{
-          background: "#fafafa",
-          padding: "15px",
-          borderRadius: "6px",
-          border: "1px solid #eee",
-        }}
-      >
+      <h3 style={{ marginTop: "30px" }}>Your Inputs</h3>
+      <div style={{ background: "#fafafa", padding: "15px", borderRadius: "6px", border: "1px solid #eee" }}>
         <pre style={{ whiteSpace: "pre-wrap" }}>
-{JSON.stringify(userInputs, null, 2)}
+{JSON.stringify(Object.fromEntries(Object.entries(searchParams).filter(([k]) => k !== "result")), null, 2)}
         </pre>
       </div>
     </div>
