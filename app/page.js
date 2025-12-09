@@ -21,23 +21,32 @@ export default function Home() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  async function handleGenerate() {
-    const res = await fetch("/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(formData),
-    });
+  const handleGenerate = async () => {
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
 
-    const data = await res.json();
+      const data = await res.json();
 
-    // Redirect with EVERYTHING in the URL
-    const params = new URLSearchParams({
-      ...formData,
-      result: data.result,
-    });
+      if (!data.result) {
+        alert("AI did not return a result. Try again.");
+        return;
+      }
 
-    router.push(`/results?${params.toString()}`);
-  }
+      const params = new URLSearchParams({
+        ...formData,
+        result: data.result,
+      });
+
+      router.push(`/results?${params.toString()}`);
+    } catch (err) {
+      console.error(err);
+      alert("Error generating activity. Check console.");
+    }
+  };
 
   return (
     <div style={{ padding: "20px" }}>
@@ -50,7 +59,7 @@ export default function Home() {
 
       {showPersonalize && (
         <div style={{ marginTop: "20px" }}>
-          {Object.keys(formData).map((key) => (
+          {Object.keys(formData).map((key) =>
             key !== "extraInfo" ? (
               <div key={key}>
                 <label>
@@ -74,7 +83,7 @@ export default function Home() {
                 />
               </label>
             )
-          ))}
+          )}
 
           <button
             onClick={handleGenerate}
