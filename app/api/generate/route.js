@@ -14,6 +14,9 @@ export async function POST(req) {
       maxAge,
       numPeople,
       extraInfo,
+      country,
+      state,
+      city,
     } = body || {};
 
     const constraints = [];
@@ -23,6 +26,9 @@ export async function POST(req) {
     if (minAge) constraints.push(`minAge: ${minAge}`);
     if (maxAge) constraints.push(`maxAge: ${maxAge}`);
     if (numPeople) constraints.push(`numPeople: ${numPeople}`);
+    if (country) constraints.push(`country: ${country}`);
+    if (state) constraints.push(`state: ${state}`);
+    if (city) constraints.push(`city: ${city}`);
     if (extraInfo) constraints.push(`extra: ${extraInfo}`);
 
     const constraintText =
@@ -36,7 +42,7 @@ export async function POST(req) {
     const userPrompt = `
 You are Fun Bot 3000. Suggest ONE engaging, realistic, modern activity.
 
-Your job: generate an activity that actually fits the user's age range, personality, vibe, and situation.
+Use the provided constraints to tailor the activity.
 
 Randomizer seed: ${randomSeed}
 
@@ -76,6 +82,9 @@ Randomizer seed: ${randomSeed}
   - fall: aesthetic, cozy, creative
   - spring: outdoors, nature, bright activities
 
+======== PLACE INFO =========
+Include country/state/city if given; consider local availability (e.g., city-specific spots or outdoor options).
+
 ======== OUTPUT FORMAT =========
 Return ONLY strict JSON:
 {
@@ -94,7 +103,7 @@ No markdown. JSON only. Ensure JSON is valid.
       model: "gpt-4.1-mini",
       messages: [{ role: "user", content: userPrompt }],
       max_tokens: 400,
-      temperature: 1.05,  // better creativity
+      temperature: 1.05,
       top_p: 1,
     });
 
@@ -126,4 +135,3 @@ No markdown. JSON only. Ensure JSON is valid.
     );
   }
 }
-
