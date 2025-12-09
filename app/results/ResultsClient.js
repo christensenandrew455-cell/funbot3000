@@ -11,9 +11,10 @@ export default function ResultsClient() {
   const [aiResult, setAiResult] = useState(null);
   const [showLong, setShowLong] = useState(false);
   const [sessionData, setSessionData] = useState(null);
+  const [editing, setEditing] = useState(false);
   const [error, setError] = useState("");
 
-  // Load session data
+  // Load session data on mount
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem("activityData");
@@ -21,27 +22,12 @@ export default function ResultsClient() {
     } catch {}
   }, []);
 
-  // Clear on unload or unmount
-  useEffect(() => {
-    const handler = () => {
-      try {
-        sessionStorage.removeItem("activityData");
-      } catch {}
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => {
-      window.removeEventListener("beforeunload", handler);
-      try {
-        sessionStorage.removeItem("activityData");
-      } catch {}
-    };
-  }, []);
-
-  // Fetch function
+  // Fetch activity from API
   const fetchAi = useCallback(
     async (body) => {
       setLoading(true);
       setError("");
+
       try {
         const res = await fetch("/api/generate", {
           method: "POST",
@@ -64,35 +50,64 @@ export default function ResultsClient() {
     [sessionData]
   );
 
-  // Initial fetch
+  // Initial fetch only when NOT editing
   useEffect(() => {
+    if (!sessionData || editing) return;
+
     const qRand = params.get("rand");
+
     if (qRand) {
       fetchAi({});
     } else {
-      fetchAi(sessionData ?? {});
+      fetchAi(sessionData);
     }
-  }, [sessionData, params, fetchAi]);
+  }, [sessionData, params, editing, fetchAi]);
 
+  // Regenerate
   async function handleGenerateAgain() {
     await fetchAi(sessionData ?? {});
     setShowLong(false);
   }
 
+  // Open edit form (DO NOT fetch)
   function handleEditData() {
-    // Do NOT navigate. Edit right here.
-    setSessionData(sessionData || {});
+    setEditing(true);
   }
 
+  // Clear everything
   function handleClearAll() {
     sessionStorage.removeItem("activityData");
     setSessionData(null);
-    router.refresh();
+    setAiResult(null);
+    setEditing(false);
   }
 
-  if (loading) return <div>Loading activity...</div>;
+  // UI states
+  if (loading && !editing) return <div>Loading activity...</div>;
   if (error) return <div>Error: {error}</div>;
 
+  // If editing, show form instead of activity view
+  if (editing) {
+    return (
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: 20 }}>
+        <h2>Edit Your Preferences</h2>
+        <SimplePersonalizeForm
+          initial={sessionData}
+          onSave={(data) => {
+            sessionStorage.setItem("activityData", JSON.stringify(data));
+            setSessionData(data);
+            setEditing(false);
+            fetchAi(data);
+          }}
+        />
+        <button onClick={() => setEditing(false)} style={{ marginTop: 12 }}>
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  // Normal activity view
   const title = aiResult?.title || "Activity";
   const short = aiResult?.short || "";
   const long = aiResult?.long || "";
@@ -119,14 +134,17 @@ export default function ResultsClient() {
           Don't like it? Generate again
         </button>
 
-        {sessionData ? (
+        {sessionData && (
           <>
             <button onClick={handleEditData} style={{ marginRight: 8 }}>
               Edit data
             </button>
+
             <button onClick={handleClearAll}>Clear all</button>
           </>
-        ) : (
+        )}
+
+        {!sessionData && (
           <SimplePersonalizeForm
             onSave={(data) => {
               sessionStorage.setItem("activityData", JSON.stringify(data));
@@ -140,14 +158,16 @@ export default function ResultsClient() {
   );
 }
 
-function SimplePersonalizeForm({ onSave }) {
-  const [state, setState] = useState({
-    personality: "",
-    locationPref: "",
-    season: "",
-    numPeople: "",
-    extraInfo: "",
-  });
+function SimplePersonalizeForm({ onSave, initial }) {
+  const [state, setState] = useState(
+    initial || {
+      personality: "",
+      locationPref: "",
+      season: "",
+      numPeople: "",
+      extraInfo: "",
+    }
+  );
 
   function update(k, v) {
     setState((s) => ({ ...s, [k]: v }));
@@ -210,7 +230,7 @@ function SimplePersonalizeForm({ onSave }) {
           onChange={(e) => update("extraInfo", e.target.value)}
         />
 
-        <button type="submit">Generate activity</button>
+        <button type="submit">Save & Generate Activity</button>
       </div>
     </form>
   );
