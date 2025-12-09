@@ -58,26 +58,37 @@ export default function Home() {
 
   // call API and save aiResult into sessionStorage
   async function submitToApi(body) {
-    // ensure activityData saved
+    // add previous activity so GPT cannot repeat
+    const previousActivity =
+      sessionStorage.getItem("previousActivity") || "";
+
+    const finalBody = {
+      ...body,
+      previousActivity,
+    };
+
     try {
-      sessionStorage.setItem("activityData", JSON.stringify(body));
+      sessionStorage.setItem("activityData", JSON.stringify(finalBody));
     } catch {}
 
     const res = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(finalBody),
     });
 
     const data = await res.json();
-    // save aiResult for results page to read
+
+    // save aiResult + save last activity for anti-repeat
     try {
+      if (data.aiResult?.title) {
+        sessionStorage.setItem("previousActivity", data.aiResult.title);
+      }
       sessionStorage.setItem("aiResult", JSON.stringify(data.aiResult));
     } catch {}
   }
 
   async function handleGenerateRandom() {
-    // explicitly save null activityData to indicate random
     try {
       sessionStorage.setItem("activityData", JSON.stringify(null));
     } catch {}
@@ -146,6 +157,7 @@ export default function Home() {
                 <option value=""></option>
                 <option value="inside">Inside</option>
                 <option value="outside">Outside</option>
+                <option value="both">Both</option>
               </select>
             </label>
 
@@ -191,7 +203,7 @@ export default function Home() {
               }
             />
 
-            {/* Place fields: Country -> show State -> show City */}
+            {/* Place fields */}
             <div>
               <input
                 placeholder="Country (type)"
