@@ -1,3 +1,4 @@
+// app/api/generate/route.js
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
@@ -8,9 +9,9 @@ const client = new OpenAI({
 export async function POST(req) {
   try {
     const data = await req.json();
-    console.log("Received body:", data);
+    console.log("API /generate received:", data);
 
-    // Build prompt parts for optional info
+    // Prepare optional prompt parts
     const promptParts = [];
     if (data.season) promptParts.push(`Season: ${data.season}`);
     if (data.personality) promptParts.push(`Personality: ${data.personality}`);
@@ -19,65 +20,47 @@ export async function POST(req) {
     if (data.activityType) promptParts.push(`Type: ${data.activityType}`);
     if (data.extraInfo) promptParts.push(`Extra info: ${data.extraInfo}`);
 
-    let userPrompt;
-    if (promptParts.length > 0) {
-      userPrompt = `Generate a fun activity based on the following optional info: ${promptParts.join(
-        ", "
-      )}. Include a 1–2 sentence quick description and a detailed paragraph.`;
-    } else {
-      userPrompt =
-        "Generate a random fun activity for anyone. No input information is required. Include a 1–2 sentence quick description and a detailed paragraph.";
-    }
+    const userPrompt = promptParts.length
+      ? `Generate a fun activity based on the following OPTIONAL inputs: ${promptParts.join(", ")}. Include a 1–2 sentence quick description and then a detailed paragraph on how to do it.`
+      : "Generate a random fun activity for anyone. Include a 1–2 sentence quick description and then a detailed paragraph on how to do it. Inputs are optional.";
 
-    console.log("Using prompt:", userPrompt);
+    console.log("Prompt sent to OpenAI:", userPrompt);
 
-    // Call OpenAI
     const completion = await client.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [
-        {
-          role: "system",
-          content:
-            "You are FunBot 3000, a fun activity generator. All user input is optional. If no input is provided, generate a fun activity for anyone."
-        },
+        { role: "system", content: "You are FunBot 3000, a friendly activity suggestion assistant. Treat all user inputs as OPTIONAL. If none are provided, create a broadly-appealing activity." },
         { role: "user", content: userPrompt }
       ],
-      max_tokens: 400,
+      max_tokens: 500,
     });
 
-    console.log("Raw GPT response:", completion);
+    console.log("Raw OpenAI completion:", completion);
 
-    // Extract text reliably
+    // Robust extraction of the assistant content
     let text = "";
-    try {
-      const msg = completion.choices?.[0]?.message;
-      if (msg) {
-        if (Array.isArray(msg.content)) {
-          text = msg.content.map(c => c.text).join("\n").trim();
-        } else if (msg.content?.text) {
-          text = msg.content.text.trim();
-        } else if (typeof msg.content === "string") {
-          text = msg.content.trim();
-        }
+    const msg = completion?.choices?.[0]?.message;
+    if (msg) {
+      // msg.content can be array or object or string depending on SDK
+      if (Array.isArray(msg.content)) {
+        // array of blocks: { type: "...", text: "..." } or { text: "..." }
+        text = msg.content.map((c) => c?.text ?? c?.content ?? "").join("\n").trim();
+      } else if (typeof msg.content === "object") {
+        // object with .text or other
+        text = (msg.content.text ?? msg.content?.[0]?.text ?? "").trim();
+      } else if (typeof msg.content === "string") {
+        text = msg.content.trim();
       }
-    } catch (err) {
-      console.warn("Failed to parse GPT content:", err);
     }
 
     if (!text) {
-      text = "Oops! GPT did not return a result. Try changing your inputs slightly.";
+      console.warn("OpenAI returned no text; using fallback.");
+      text = "Oops — the AI didn't return a proper suggestion. Try again or tweak your inputs.";
     }
 
     return NextResponse.json({ result: text });
-  } catch (error) {
-    console.error("API error:", error);
-    return NextResponse.json(
-      {
-        result:
-          "Error occurred while generating activity. Please check server logs.",
-        error: error.message,
-      },
-      { status: 500 }
-    );
+  } catch (err) {
+    console.error("API generate error:", err);
+    return NextResponse.json({ error: err.message, result: "Error generating activity. Check server logs." }, { status: 500 });
   }
 }
