@@ -6,10 +6,9 @@ export default function ResultsClient() {
   const [loading, setLoading] = useState(true);
   const [aiResult, setAiResult] = useState(null);
   const [showLong, setShowLong] = useState(false);
-  const [sessionData, setSessionData] = useState(undefined); // undefined = still loading, null = explicit no data
+  const [sessionData, setSessionData] = useState(undefined);
   const [editing, setEditing] = useState(false);
 
-  // Load stored data & result — NO API CALL ON LOAD if aiResult exists
   useEffect(() => {
     try {
       const rawData = sessionStorage.getItem("activityData");
@@ -44,18 +43,30 @@ export default function ResultsClient() {
 
   async function fetchAi(data) {
     setLoading(true);
+
+    const previousActivity =
+      sessionStorage.getItem("previousActivity") || "";
+
     try {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data ?? {}),
+        body: JSON.stringify({
+          ...data,
+          previousActivity,
+        }),
       });
+
       const json = await res.json();
       setAiResult(json.aiResult);
+
       try {
         sessionStorage.setItem("aiResult", JSON.stringify(json.aiResult));
+        if (json.aiResult?.title) {
+          sessionStorage.setItem("previousActivity", json.aiResult.title);
+        }
       } catch {}
-    } catch (err) {
+    } catch {
       setAiResult(null);
     } finally {
       setLoading(false);
@@ -71,7 +82,6 @@ export default function ResultsClient() {
     setEditing(true);
   }
 
-  // Save edits and regenerate
   function handleSaveEdits(data) {
     try {
       sessionStorage.setItem("activityData", JSON.stringify(data));
@@ -81,15 +91,17 @@ export default function ResultsClient() {
     fetchAi(data);
   }
 
-  // No clear all in this version (per request)
-
   if (loading) return <div>Loading...</div>;
 
   if (editing) {
     return (
       <div style={{ maxWidth: 720, margin: "0 auto", padding: 20 }}>
         <h2>Edit Your Preferences</h2>
-        <EditForm initial={sessionData} onSave={handleSaveEdits} onCancel={() => setEditing(false)} />
+        <EditForm
+          initial={sessionData}
+          onSave={handleSaveEdits}
+          onCancel={() => setEditing(false)}
+        />
       </div>
     );
   }
@@ -99,7 +111,7 @@ export default function ResultsClient() {
       <div style={{ maxWidth: 720, margin: "0 auto", padding: 20 }}>
         <h1 style={{ fontSize: 24 }}>No activity found</h1>
         <p style={{ marginTop: 8 }}>
-          You haven't generated an activity yet. Go back and generate one or fill preferences below.
+          You haven't generated an activity yet.
         </p>
 
         <div style={{ marginTop: 18 }}>
@@ -107,7 +119,10 @@ export default function ResultsClient() {
             initial={sessionData !== null ? sessionData : {}}
             onSave={(data) => {
               try {
-                sessionStorage.setItem("activityData", JSON.stringify(data));
+                sessionStorage.setItem(
+                  "activityData",
+                  JSON.stringify(data)
+                );
               } catch {}
               setSessionData(data);
               fetchAi(data);
@@ -186,19 +201,29 @@ function EditForm({ initial = {}, onSave, onCancel }) {
       }}
     >
       <div style={{ display: "grid", gap: 8 }}>
-        <select value={state.personality} onChange={(e) => update("personality", e.target.value)}>
+        <select
+          value={state.personality}
+          onChange={(e) => update("personality", e.target.value)}
+        >
           <option value=""></option>
           <option value="extrovert">Extrovert</option>
           <option value="introvert">Introvert</option>
         </select>
 
-        <select value={state.locationPref} onChange={(e) => update("locationPref", e.target.value)}>
+        <select
+          value={state.locationPref}
+          onChange={(e) => update("locationPref", e.target.value)}
+        >
           <option value=""></option>
           <option value="inside">Inside</option>
           <option value="outside">Outside</option>
+          <option value="both">Both</option>
         </select>
 
-        <select value={state.season} onChange={(e) => update("season", e.target.value)}>
+        <select
+          value={state.season}
+          onChange={(e) => update("season", e.target.value)}
+        >
           <option value=""></option>
           <option value="spring">Spring</option>
           <option value="summer">Summer</option>
@@ -207,24 +232,57 @@ function EditForm({ initial = {}, onSave, onCancel }) {
         </select>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <input placeholder="Min age" value={state.minAge} onChange={(e) => update("minAge", e.target.value.replace(/\D/g, ""))} />
-          <input placeholder="Max age" value={state.maxAge} onChange={(e) => update("maxAge", e.target.value.replace(/\D/g, ""))} />
+          <input
+            placeholder="Min age"
+            value={state.minAge}
+            onChange={(e) =>
+              update("minAge", e.target.value.replace(/\D/g, ""))
+            }
+          />
+          <input
+            placeholder="Max age"
+            value={state.maxAge}
+            onChange={(e) =>
+              update("maxAge", e.target.value.replace(/\D/g, ""))
+            }
+          />
         </div>
 
-        <input placeholder="Number of people" value={state.numPeople} onChange={(e) => update("numPeople", e.target.value.replace(/\D/g, ""))} />
+        <input
+          placeholder="Number of people"
+          value={state.numPeople}
+          onChange={(e) =>
+            update("numPeople", e.target.value.replace(/\D/g, ""))
+          }
+        />
 
-        {/* Place fields */}
-        <input placeholder="Country (type)" value={state.country} onChange={(e) => update("country", e.target.value)} />
+        <input
+          placeholder="Country (type)"
+          value={state.country}
+          onChange={(e) => update("country", e.target.value)}
+        />
 
         {state.country && (
-          <input placeholder="State / Province (type)" value={state.state} onChange={(e) => update("state", e.target.value)} />
+          <input
+            placeholder="State / Province (type)"
+            value={state.state}
+            onChange={(e) => update("state", e.target.value)}
+          />
         )}
 
         {state.state && (
-          <input placeholder="City / Town (type)" value={state.city} onChange={(e) => update("city", e.target.value)} />
+          <input
+            placeholder="City / Town (type)"
+            value={state.city}
+            onChange={(e) => update("city", e.target.value)}
+          />
         )}
 
-        <textarea placeholder="Extra notes" value={state.extraInfo} onChange={(e) => update("extraInfo", e.target.value)} />
+        <textarea
+          placeholder="Extra notes"
+          value={state.extraInfo}
+          onChange={(e) => update("extraInfo", e.target.value)}
+        />
 
         <div style={{ display: "flex", gap: 8 }}>
           <button type="submit">Save & Generate Activity</button>
