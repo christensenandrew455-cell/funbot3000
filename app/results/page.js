@@ -1,4 +1,7 @@
 // app/results/page.js
+
+export const dynamic = "force-dynamic"; // ⬅️ FIX: prevents prerender errors
+
 import { Suspense } from "react";
 
 export default function Page() {
@@ -10,7 +13,7 @@ export default function Page() {
 }
 
 function ResultsClient() {
-  'use client';
+  "use client";
 
   const { useState, useEffect } = require("react");
   const { useSearchParams } = require("next/navigation");
@@ -48,9 +51,7 @@ function ResultsClient() {
     return (
       <div style={{ padding: "20px" }}>
         <h1>No information provided</h1>
-        <button onClick={() => (window.location.href = "/")}>
-          Go Back
-        </button>
+        <button onClick={() => (window.location.href = "/")}>Go Back</button>
       </div>
     );
   }
@@ -62,12 +63,14 @@ function ResultsClient() {
       {loading && <p>Generating activity...</p>}
 
       {!loading && activity && (
-        <div style={{
-          border: "1px solid #ccc",
-          padding: "15px",
-          marginTop: "20px",
-          borderRadius: "8px"
-        }}>
+        <div
+          style={{
+            border: "1px solid #ccc",
+            padding: "15px",
+            marginTop: "20px",
+            borderRadius: "8px",
+          }}
+        >
           <h2>Result</h2>
 
           <p>{activity.split("\n")[0]}</p>
