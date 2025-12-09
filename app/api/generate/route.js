@@ -21,13 +21,14 @@ export async function POST(req) {
       ? `Generate a fun activity based on: ${promptParts.join(", ")}. Include a 1–2 sentence quick description and a detailed paragraph.`
       : `Generate a random fun activity for anyone. Include a 1–2 sentence quick description and a detailed paragraph.`;
 
-    const response = await client.responses.create({
+    // Use chat completions API
+    const completion = await client.chat.completions.create({
       model: "gpt-4.1-mini",
-      input: prompt,
-      max_output_tokens: 400,
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 400,
     });
 
-    const text = response.output_text;
+    const text = completion.choices[0].message.content;
 
     return NextResponse.json({ result: text });
   } catch (error) {
