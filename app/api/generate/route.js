@@ -30,8 +30,14 @@ export async function POST(req) {
         ? `Constraints: ${constraints.join(", ")}.`
         : "No constraints provided.";
 
+    // 🔥 THE IMPORTANT FIX — unique random seed so the model doesn't repeat results
+    const randomSeed = Math.random().toString(36).slice(2);
+
     const userPrompt = `
 You are Fun Bot 3000. Suggest ONE engaging activity.
+Every response must be original — use the randomizer seed to ensure variation.
+
+Randomizer seed: ${randomSeed}
 
 Return ONLY strict JSON:
 {
@@ -50,7 +56,8 @@ No markdown. JSON only.
       model: "gpt-4.1-mini",
       messages: [{ role: "user", content: userPrompt }],
       max_tokens: 400,
-      temperature: 0.9,
+      temperature: 1.0,          // slightly higher randomness
+      top_p: 1,                  // maximize variation
     });
 
     const text = completion.choices?.[0]?.message?.content ?? "";
