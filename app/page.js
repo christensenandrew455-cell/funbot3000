@@ -51,11 +51,14 @@ export default function Home() {
   })();
 
   async function submitToApi(body) {
-    await fetch("/api/generate", {
+    const res = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+
+    const data = await res.json();
+    sessionStorage.setItem("aiResult", JSON.stringify(data.aiResult));
   }
 
   async function handleGenerateRandom() {
