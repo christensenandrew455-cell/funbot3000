@@ -1,135 +1,93 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 export default function ResultsClient() {
   const params = useSearchParams();
-  const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [aiResult, setAiResult] = useState(null);
   const [showLong, setShowLong] = useState(false);
   const [sessionData, setSessionData] = useState(null);
   const [editing, setEditing] = useState(false);
-  const [error, setError] = useState("");
 
-  // Load session data on mount
+  // Load stored data & result — NO API CALL HERE
   useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem("activityData");
-      if (saved) setSessionData(JSON.parse(saved));
-    } catch {}
+    const saved = sessionStorage.getItem("activityData");
+    const savedAI = sessionStorage.getItem("aiResult");
+
+    if (saved) setSessionData(JSON.parse(saved));
+    if (savedAI) setAiResult(JSON.parse(savedAI));
+
+    setLoading(false);
   }, []);
 
-  // Fetch activity from API
-  const fetchAi = useCallback(
-    async (body) => {
-      setLoading(true);
-      setError("");
+  async function fetchAi(data) {
+    setLoading(true);
 
-      try {
-        const res = await fetch("/api/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body ?? sessionData ?? {}),
-        });
+    const res = await fetch("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
 
-        const data = await res.json();
-        if (!data?.aiResult) {
-          setError("No AI result returned.");
-        } else {
-          setAiResult(data.aiResult);
-        }
-      } catch (err) {
-        setError(err?.message || "Fetch error");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [sessionData]
-  );
+    const json = await res.json();
+    setAiResult(json.aiResult);
+    sessionStorage.setItem("aiResult", JSON.stringify(json.aiResult));
 
-  // Initial fetch only when NOT editing
-  useEffect(() => {
-    if (!sessionData || editing) return;
+    setLoading(false);
+  }
 
-    const qRand = params.get("rand");
-
-    if (qRand) {
-      fetchAi({});
-    } else {
-      fetchAi(sessionData);
-    }
-  }, [sessionData, params, editing, fetchAi]);
-
-  // Regenerate
   async function handleGenerateAgain() {
     await fetchAi(sessionData ?? {});
     setShowLong(false);
   }
 
-  // Open edit form (DO NOT fetch)
   function handleEditData() {
     setEditing(true);
   }
 
-  // Clear everything
   function handleClearAll() {
     sessionStorage.removeItem("activityData");
+    sessionStorage.removeItem("aiResult");
     setSessionData(null);
     setAiResult(null);
     setEditing(false);
   }
 
-  // UI states
-  if (loading && !editing) return <div>Loading activity...</div>;
-  if (error) return <div>Error: {error}</div>;
+  if (loading) return <div>Loading...</div>;
 
-  // If editing, show form instead of activity view
   if (editing) {
     return (
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: 20 }}>
-        <h2>Edit Your Preferences</h2>
-        <SimplePersonalizeForm
-          initial={sessionData}
-          onSave={(data) => {
-            sessionStorage.setItem("activityData", JSON.stringify(data));
-            setSessionData(data);
-            setEditing(false);
-            fetchAi(data);
-          }}
-        />
-        <button onClick={() => setEditing(false)} style={{ marginTop: 12 }}>
-          Cancel
-        </button>
-      </div>
+      <EditForm
+        initial={sessionData}
+        onSave={(data) => {
+          sessionStorage.setItem("activityData", JSON.stringify(data));
+          setSessionData(data);
+          setEditing(false);
+          fetchAi(data);
+        }}
+        onCancel={() => setEditing(false)}
+      />
     );
   }
 
-  // Normal activity view
-  const title = aiResult?.title || "Activity";
-  const short = aiResult?.short || "";
-  const long = aiResult?.long || "";
+  if (!aiResult) return <div>No activity found. Go back and generate one.</div>;
 
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", padding: 20 }}>
-      <h1 style={{ fontSize: 24 }}>{title}</h1>
+      <h1 style={{ fontSize: 24 }}>{aiResult.title}</h1>
 
-      <p style={{ marginTop: 8 }}>{short}</p>
+      <p>{aiResult.short}</p>
 
       {!showLong ? (
-        <div style={{ marginTop: 12 }}>
-          <button onClick={() => setShowLong(true)}>More</button>
-        </div>
+        <button onClick={() => setShowLong(true)}>More</button>
       ) : (
-        <div style={{ marginTop: 12 }}>
-          <div style={{ height: 12 }} />
-          <div>{long}</div>
-        </div>
+        <p>{aiResult.long}</p>
       )}
 
-      <div style={{ marginTop: 18 }}>
+      <div style={{ marginTop: 20 }}>
         <button onClick={handleGenerateAgain} style={{ marginRight: 8 }}>
           Don't like it? Generate again
         </button>
@@ -139,99 +97,93 @@ export default function ResultsClient() {
             <button onClick={handleEditData} style={{ marginRight: 8 }}>
               Edit data
             </button>
-
             <button onClick={handleClearAll}>Clear all</button>
           </>
-        )}
-
-        {!sessionData && (
-          <SimplePersonalizeForm
-            onSave={(data) => {
-              sessionStorage.setItem("activityData", JSON.stringify(data));
-              setSessionData(data);
-              fetchAi(data);
-            }}
-          />
         )}
       </div>
     </div>
   );
 }
 
-function SimplePersonalizeForm({ onSave, initial }) {
-  const [state, setState] = useState(
-    initial || {
-      personality: "",
-      locationPref: "",
-      season: "",
-      numPeople: "",
-      extraInfo: "",
-    }
-  );
+function EditForm({ initial, onSave, onCancel }) {
+  const [form, setForm] = useState(initial);
 
   function update(k, v) {
-    setState((s) => ({ ...s, [k]: v }));
+    setForm((s) => ({ ...s, [k]: v }));
   }
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSave(state);
+        onSave(form);
       }}
       style={{
-        marginTop: 8,
-        border: "1px solid #eee",
-        padding: 8,
-        borderRadius: 6,
+        maxWidth: 720,
+        margin: "0 auto",
+        padding: 20,
+        border: "1px solid #ddd",
+        borderRadius: 8,
       }}
     >
-      <div style={{ display: "grid", gap: 8 }}>
-        <select
-          value={state.personality}
-          onChange={(e) => update("personality", e.target.value)}
-        >
-          <option value=""></option>
-          <option value="extrovert">Extrovert</option>
-          <option value="introvert">Introvert</option>
-        </select>
+      <h2>Edit Your Preferences</h2>
 
-        <select
-          value={state.locationPref}
-          onChange={(e) => update("locationPref", e.target.value)}
-        >
-          <option value=""></option>
-          <option value="inside">Inside</option>
-          <option value="outside">Outside</option>
-        </select>
+      <select
+        value={form.personality}
+        onChange={(e) => update("personality", e.target.value)}
+      >
+        <option value=""></option>
+        <option value="extrovert">Extrovert</option>
+        <option value="introvert">Introvert</option>
+      </select>
 
-        <select
-          value={state.season}
-          onChange={(e) => update("season", e.target.value)}
-        >
-          <option value=""></option>
-          <option value="spring">Spring</option>
-          <option value="summer">Summer</option>
-          <option value="autumn">Autumn</option>
-          <option value="winter">Winter</option>
-        </select>
+      <select
+        value={form.locationPref}
+        onChange={(e) => update("locationPref", e.target.value)}
+      >
+        <option value=""></option>
+        <option value="inside">Inside</option>
+        <option value="outside">Outside</option>
+      </select>
 
-        <input
-          placeholder="Number of people"
-          value={state.numPeople}
-          onChange={(e) =>
-            update("numPeople", e.target.value.replace(/\D/g, ""))
-          }
-        />
+      <select value={form.season} onChange={(e) => update("season", e.target.value)}>
+        <option value=""></option>
+        <option value="spring">Spring</option>
+        <option value="summer">Summer</option>
+        <option value="autumn">Autumn</option>
+        <option value="winter">Winter</option>
+      </select>
 
-        <textarea
-          placeholder="Extra notes"
-          value={state.extraInfo}
-          onChange={(e) => update("extraInfo", e.target.value)}
-        />
+      <input
+        placeholder="Min age"
+        value={form.minAge}
+        onChange={(e) => update("minAge", e.target.value)}
+      />
 
-        <button type="submit">Save & Generate Activity</button>
-      </div>
+      <input
+        placeholder="Max age"
+        value={form.maxAge}
+        onChange={(e) => update("maxAge", e.target.value)}
+      />
+
+      <input
+        placeholder="Number of people"
+        value={form.numPeople}
+        onChange={(e) => update("numPeople", e.target.value)}
+      />
+
+      <textarea
+        placeholder="Extra notes"
+        value={form.extraInfo}
+        onChange={(e) => update("extraInfo", e.target.value)}
+      />
+
+      <button type="submit" style={{ marginRight: 8 }}>
+        Save & Regenerate
+      </button>
+      <button type="button" onClick={onCancel}>
+        Cancel
+      </button>
     </form>
   );
 }
