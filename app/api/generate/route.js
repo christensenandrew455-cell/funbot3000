@@ -17,6 +17,7 @@ export async function POST(req) {
       country,
       state,
       city,
+      previousActivities = [] // <-- NEW FIELD FOR NON-REPEAT LOGIC
     } = body || {};
 
     const constraints = [];
@@ -36,26 +37,47 @@ export async function POST(req) {
         ? `Constraints: ${constraints.join(", ")}.`
         : "No constraints provided.";
 
-    // Randomness boost so each activity is unique
+    // Convert activity history list into readable text
+    const historyText =
+      previousActivities.length > 0
+        ? previousActivities.map((a) => `- ${a}`).join("\n")
+        : "None";
+
     const randomSeed = Math.random().toString(36).slice(2);
 
     const userPrompt = `
 You are Fun Bot 3000. Suggest ONE engaging, realistic, modern activity.
-
 Use the provided constraints to tailor the activity.
 
 Randomizer seed: ${randomSeed}
 
+======== DO NOT REPEAT ACTIVITIES =========
+The user already received these activities:
+${historyText}
+
+You MUST NOT output anything similar to these previous titles or ideas.
+Always create a **NEW** activity that differs clearly.
+
+======== LOCATION RULE FIX =========
+The field "locationPref" may be:
+• inside → indoor-only ideas
+• outside → outdoor-only ideas
+• both → activity must be something that works **indoors OR outdoors**
+• "" (empty) → no restriction
+
 ======== AGE RULES =========
 • Ages 12–17:
   - Use modern, trendy, social, energetic, or internet-culture activities.
-  - Examples: creative challenges, aesthetic photo missions, TikTok-style trends, light adventure, mini-competitions, room-decor DIY, gaming, fun dares, friend-based activities.
+  - Examples: creative challenges, aesthetic photo missions, TikTok-style trends,
+    light adventure, mini-competitions, room-decor DIY, gaming, fun dares,
+    friend-based activities.
   - Avoid childish activities (e.g., “make a paper craft”, “play tag”).
   - Avoid boring adult activities (e.g., “have a calm picnic”, “go antique shopping”).
   - Keep tone natural—not cringe—no forced slang.
 
 • Ages 18–30:
-  - Creative, social, nightlife, fitness, mini-adventures, food challenges, outgoing group ideas, travel-like vibes.
+  - Creative, social, nightlife, fitness, mini-adventures, food challenges,
+    outgoing group ideas, travel-like vibes.
 
 • Ages 31–55:
   - Balanced: creative, relaxing, active, skill-building, hobbies, outdoors.
@@ -70,20 +92,14 @@ Randomizer seed: ${randomSeed}
 • introvert → calm, cozy, creative, solo-friendly, low social pressure.
 • extrovert → social, energetic, group-based, outgoing, movement or interaction.
 
-======== LOCATION RULES =========
-• inside → indoor-only ideas.
-• outside → outdoor-only ideas.
-• both/unspecified → unrestricted.
-
 ======== SEASON RULES =========
-• Match activities realistically to the season:
-  - winter: cold-friendly or indoor
-  - summer: outdoor, water, adventure
-  - fall: aesthetic, cozy, creative
-  - spring: outdoors, nature, bright activities
+• winter → cold-friendly or indoor
+• summer → outdoor, water, adventure
+• fall → aesthetic, cozy, creative
+• spring → nature, bright, outdoors
 
 ======== PLACE INFO =========
-Include country/state/city if given; consider local availability (e.g., city-specific spots or outdoor options).
+Consider country/state/city if given; match realism.
 
 ======== OUTPUT FORMAT =========
 Return ONLY strict JSON:
@@ -96,7 +112,7 @@ Return ONLY strict JSON:
 User info:
 ${constraintText}
 
-No markdown. JSON only. Ensure JSON is valid.
+No markdown. JSON only.
 `;
 
     const completion = await client.chat.completions.create({
