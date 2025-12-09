@@ -21,7 +21,6 @@ export async function POST(req) {
       ? `Generate a fun activity based on: ${promptParts.join(", ")}. Include a 1–2 sentence quick description and a detailed paragraph.`
       : `Generate a random fun activity for anyone. Include a 1–2 sentence quick description and a detailed paragraph.`;
 
-    // Use chat completions API
     const completion = await client.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [{ role: "user", content: prompt }],
