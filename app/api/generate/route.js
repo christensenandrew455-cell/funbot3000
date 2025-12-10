@@ -17,9 +17,19 @@ export async function POST(req) {
       country,
       state,
       city,
-      previousActivities = [] // <-- NEW FIELD FOR NON-REPEAT LOGIC
+
+      // 🔥 FIX: Your frontend sends ONE string, not an array.
+      // Convert it into an array so your repeat-prevention still works.
+      previousActivity = ""
     } = body || {};
 
+    // Convert single string into array
+    const previousActivities =
+      previousActivity && previousActivity !== "null"
+        ? [previousActivity]
+        : [];
+
+    // Build constraints list
     const constraints = [];
     if (personality) constraints.push(`personality: ${personality}`);
     if (locationPref) constraints.push(`inside/outside: ${locationPref}`);
@@ -37,7 +47,7 @@ export async function POST(req) {
         ? `Constraints: ${constraints.join(", ")}.`
         : "No constraints provided.";
 
-    // Convert activity history list into readable text
+    // Activity history
     const historyText =
       previousActivities.length > 0
         ? previousActivities.map((a) => `- ${a}`).join("\n")
@@ -45,6 +55,9 @@ export async function POST(req) {
 
     const randomSeed = Math.random().toString(36).slice(2);
 
+    // ------------------------------
+    // MAIN PROMPT (kept exactly like your style)
+    // ------------------------------
     const userPrompt = `
 You are Fun Bot 3000. Suggest ONE engaging, realistic, modern activity.
 Use the provided constraints to tailor the activity.
@@ -62,44 +75,29 @@ Always create a **NEW** activity that differs clearly.
 The field "locationPref" may be:
 • inside → indoor-only ideas
 • outside → outdoor-only ideas
-• both → activity must be something that works **indoors OR outdoors**
-• "" (empty) → no restriction
+• both → must work indoors OR outdoors
+• "" → no restriction
 
 ======== AGE RULES =========
-• Ages 12–17:
-  - Use modern, trendy, social, energetic, or internet-culture activities.
-  - Examples: creative challenges, aesthetic photo missions, TikTok-style trends,
-    light adventure, mini-competitions, room-decor DIY, gaming, fun dares,
-    friend-based activities.
-  - Avoid childish activities (e.g., “make a paper craft”, “play tag”).
-  - Avoid boring adult activities (e.g., “have a calm picnic”, “go antique shopping”).
-  - Keep tone natural—not cringe—no forced slang.
-
-• Ages 18–30:
-  - Creative, social, nightlife, fitness, mini-adventures, food challenges,
-    outgoing group ideas, travel-like vibes.
-
-• Ages 31–55:
-  - Balanced: creative, relaxing, active, skill-building, hobbies, outdoors.
-
-• Ages 56+:
-  - Accessible, enjoyable, light, safe, social or cozy.
-
-• Unknown ages:
-  - Just make it fun, modern, and universal.
+• Ages 12–17: modern, trendy, social, challenges, aesthetic, gaming, dares.
+  Avoid childish or boring adult tasks.
+• Ages 18–30: creative, social, fitness, nightlife, adventure, food challenges.
+• Ages 31–55: balanced, relaxing, skill-building, hobby, outdoors.
+• Ages 56+: accessible, light, cozy, social.
+• Unknown -> universal modern fun.
 
 ======== PERSONALITY RULES =========
-• introvert → calm, cozy, creative, solo-friendly, low social pressure.
-• extrovert → social, energetic, group-based, outgoing, movement or interaction.
+• introvert → calm, cozy, creative
+• extrovert → outgoing, social, energetic
 
 ======== SEASON RULES =========
-• winter → cold-friendly or indoor
-• summer → outdoor, water, adventure
-• fall → aesthetic, cozy, creative
+• winter → cozy, indoor, cold-friendly
+• summer → adventure, water, outdoor
+• fall → aesthetic, cozy, warm
 • spring → nature, bright, outdoors
 
-======== PLACE INFO =========
-Consider country/state/city if given; match realism.
+======== LOCATION DATA =========
+Country/state/city provided should influence realism.
 
 ======== OUTPUT FORMAT =========
 Return ONLY strict JSON:
@@ -115,6 +113,9 @@ ${constraintText}
 No markdown. JSON only.
 `;
 
+    // ------------------------------
+    // CALL OPENAI
+    // ------------------------------
     const completion = await client.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [{ role: "user", content: userPrompt }],
@@ -127,11 +128,13 @@ No markdown. JSON only.
 
     let aiResult = { title: "", short: "", long: "", raw: text };
 
+    // Try parsing JSON
     try {
       const jsonStart = text.indexOf("{");
       const jsonText = jsonStart >= 0 ? text.slice(jsonStart) : text;
       aiResult = { ...aiResult, ...(JSON.parse(jsonText) || {}) };
     } catch (err) {
+      // fallback
       aiResult.long = text.trim();
       aiResult.short = aiResult.long.split(".")[0] || "";
     }
