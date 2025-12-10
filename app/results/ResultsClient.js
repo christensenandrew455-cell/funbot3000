@@ -91,44 +91,58 @@ export default function ResultsClient() {
     fetchAi(data);
   }
 
-  if (loading) return <div>Loading...</div>;
+  const fullCenter = {
+    minHeight: "100vh",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  };
+
+  if (loading)
+    return (
+      <div style={fullCenter}>
+        <div>Loading...</div>
+      </div>
+    );
 
   if (editing) {
     return (
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: 20 }}>
-        <h2>Edit Your Preferences</h2>
-        <EditForm
-          initial={sessionData}
-          onSave={handleSaveEdits}
-          onCancel={() => setEditing(false)}
-        />
+      <div style={fullCenter}>
+        <div style={{ maxWidth: 720, width: "100%" }}>
+          <h2>Edit Your Preferences</h2>
+          <EditForm
+            initial={sessionData}
+            onSave={handleSaveEdits}
+            onCancel={() => setEditing(false)}
+          />
+        </div>
       </div>
     );
   }
 
   if (!aiResult)
     return (
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: 20 }}>
-        <h1 style={{ fontSize: 24 }}>No activity found</h1>
-        <p style={{ marginTop: 8 }}>
-          You haven't generated an activity yet.
-        </p>
+      <div style={fullCenter}>
+        <div style={{ maxWidth: 720, width: "100%" }}>
+          <h1 style={{ fontSize: 24 }}>No activity found</h1>
+          <p style={{ marginTop: 8 }}>
+            You haven't generated an activity yet.
+          </p>
 
-        <div style={{ marginTop: 18 }}>
-          <EditForm
-            initial={sessionData !== null ? sessionData : {}}
-            onSave={(data) => {
-              try {
-                sessionStorage.setItem(
-                  "activityData",
-                  JSON.stringify(data)
-                );
-              } catch {}
-              setSessionData(data);
-              fetchAi(data);
-            }}
-            onCancel={() => {}}
-          />
+          <div style={{ marginTop: 18 }}>
+            <EditForm
+              initial={sessionData !== null ? sessionData : {}}
+              onSave={(data) => {
+                try {
+                  sessionStorage.setItem("activityData", JSON.stringify(data));
+                } catch {}
+                setSessionData(data);
+                fetchAi(data);
+              }}
+              onCancel={() => {}}
+            />
+          </div>
         </div>
       </div>
     );
@@ -138,32 +152,34 @@ export default function ResultsClient() {
   const long = aiResult?.long || "";
 
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: 20 }}>
-      <h1 style={{ fontSize: 24 }}>{title}</h1>
+    <div style={fullCenter}>
+      <div style={{ maxWidth: 720, width: "100%" }}>
+        <h1 style={{ fontSize: 24 }}>{title}</h1>
 
-      <p style={{ marginTop: 8 }}>{short}</p>
+        <p style={{ marginTop: 8 }}>{short}</p>
 
-      {!showLong ? (
-        <div style={{ marginTop: 12 }}>
-          <button onClick={() => setShowLong(true)}>More</button>
-        </div>
-      ) : (
-        <div style={{ marginTop: 12 }}>
-          <div style={{ height: 12 }} />
-          <div>{long}</div>
-        </div>
-      )}
-
-      <div style={{ marginTop: 18 }}>
-        <button onClick={handleGenerateAgain} style={{ marginRight: 8 }}>
-          Don't like it? Generate again
-        </button>
-
-        {sessionData !== null && (
-          <button onClick={handleEditData} style={{ marginRight: 8 }}>
-            Edit data
+        {!showLong ? (
+          <button onClick={() => setShowLong(true)} style={{ marginTop: 12 }}>
+            More
           </button>
+        ) : (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ height: 12 }} />
+            <div>{long}</div>
+          </div>
         )}
+
+        <div style={{ marginTop: 18 }}>
+          <button onClick={handleGenerateAgain} style={{ marginRight: 8 }}>
+            Don't like it? Generate again
+          </button>
+
+          {sessionData !== null && (
+            <button onClick={handleEditData} style={{ marginRight: 8 }}>
+              Edit data
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
