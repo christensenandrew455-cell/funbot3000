@@ -98,6 +98,15 @@ export default function Home() {
   }
 
   // ---- UI STYLES ----
+
+  const fullCenter = {
+    minHeight: "100vh",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  };
+
   const cardStyle = {
     background: "white",
     padding: 20,
@@ -146,152 +155,159 @@ export default function Home() {
   };
 
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: 20 }}>
-      <h1 style={{ fontSize: 32, fontWeight: 800, textAlign: "center", marginTop: 10 }}>
-        Fun Bot 3000 🎉
-      </h1>
-
-      {/* ACTION BAR */}
-      <div style={{ marginTop: 20, display: "flex", gap: 12 }}>
-        <button
-          type="button"
-          onClick={() => setPersonalizeOpen((v) => !v)}
-          aria-expanded={personalizeOpen}
-          style={buttonSecondary}
+    <div style={fullCenter}>
+      <div style={{ maxWidth: 720, width: "100%" }}>
+        <h1
+          style={{
+            fontSize: 32,
+            fontWeight: 800,
+            textAlign: "center",
+            marginTop: 10,
+          }}
         >
-          {personalizeOpen ? "Close" : "Personalize"}
-        </button>
+          Fun Bot 3000 🎉
+        </h1>
 
-        {!personalizeOpen && (
-          <button type="button" onClick={handleGenerateRandom} style={buttonPrimary}>
-            Generate Random Activity
+        {/* ACTION BAR */}
+        <div style={{ marginTop: 20, display: "flex", gap: 12 }}>
+          <button
+            type="button"
+            onClick={() => setPersonalizeOpen((v) => !v)}
+            aria-expanded={personalizeOpen}
+            style={buttonSecondary}
+          >
+            {personalizeOpen ? "Close" : "Personalize"}
           </button>
-        )}
-      </div>
 
-      {personalizeOpen && (
-        <form onSubmit={handleGenerateActivity} style={cardStyle}>
-          <div style={{ display: "grid", gap: 14 }}>
-            <label style={labelStyle}>
-              Personality:
-              <select
-                style={inputStyle}
-                value={form.personality}
-                onChange={(e) => updateField("personality", e.target.value)}
-              >
-                <option value=""></option>
-                <option value="extrovert">Extrovert</option>
-                <option value="introvert">Introvert</option>
-              </select>
-            </label>
+          {!personalizeOpen && (
+            <button type="button" onClick={handleGenerateRandom} style={buttonPrimary}>
+              Generate Random Activity
+            </button>
+          )}
+        </div>
 
-            <label style={labelStyle}>
-              Inside / Outside:
-              <select
-                style={inputStyle}
-                value={form.locationPref}
-                onChange={(e) => updateField("locationPref", e.target.value)}
-              >
-                <option value=""></option>
-                <option value="inside">Inside</option>
-                <option value="outside">Outside</option>
-                <option value="both">Both</option>
-              </select>
-            </label>
+        {personalizeOpen && (
+          <form onSubmit={handleGenerateActivity} style={cardStyle}>
+            <div style={{ display: "grid", gap: 14 }}>
+              <label style={labelStyle}>
+                Personality:
+                <select
+                  style={inputStyle}
+                  value={form.personality}
+                  onChange={(e) => updateField("personality", e.target.value)}
+                >
+                  <option value=""></option>
+                  <option value="extrovert">Extrovert</option>
+                  <option value="introvert">Introvert</option>
+                </select>
+              </label>
 
-            <label style={labelStyle}>
-              Season:
-              <select
-                style={inputStyle}
-                value={form.season}
-                onChange={(e) => updateField("season", e.target.value)}
-              >
-                <option value=""></option>
-                <option value="spring">Spring</option>
-                <option value="summer">Summer</option>
-                <option value="autumn">Autumn/Fall</option>
-                <option value="winter">Winter</option>
-              </select>
-            </label>
+              <label style={labelStyle}>
+                Inside / Outside:
+                <select
+                  style={inputStyle}
+                  value={form.locationPref}
+                  onChange={(e) => updateField("locationPref", e.target.value)}
+                >
+                  <option value=""></option>
+                  <option value="inside">Inside</option>
+                  <option value="outside">Outside</option>
+                  <option value="both">Both</option>
+                </select>
+              </label>
 
-            <div style={{ display: "flex", gap: 10 }}>
-              <input
-                style={inputStyle}
-                placeholder="Min age"
-                value={form.minAge}
-                onChange={(e) =>
-                  updateField("minAge", e.target.value.replace(/\D/g, ""))
-                }
-              />
-              <input
-                style={inputStyle}
-                placeholder="Max age"
-                value={form.maxAge}
-                onChange={(e) =>
-                  updateField("maxAge", e.target.value.replace(/\D/g, ""))
-                }
-              />
-            </div>
+              <label style={labelStyle}>
+                Season:
+                <select
+                  style={inputStyle}
+                  value={form.season}
+                  onChange={(e) => updateField("season", e.target.value)}
+                >
+                  <option value=""></option>
+                  <option value="spring">Spring</option>
+                  <option value="summer">Summer</option>
+                  <option value="autumn">Autumn/Fall</option>
+                  <option value="winter">Winter</option>
+                </select>
+              </label>
 
-            <input
-              style={inputStyle}
-              placeholder="Number of people"
-              value={form.numPeople}
-              onChange={(e) =>
-                updateField("numPeople", e.target.value.replace(/\D/g, ""))
-              }
-            />
-
-            <input
-              style={inputStyle}
-              placeholder="Country"
-              value={form.country}
-              onChange={(e) => updateField("country", e.target.value)}
-            />
-
-            {form.country && (
-              <input
-                style={inputStyle}
-                placeholder="State / Province"
-                value={form.state}
-                onChange={(e) => updateField("state", e.target.value)}
-              />
-            )}
-
-            {form.state && (
-              <input
-                style={inputStyle}
-                placeholder="City / Town"
-                value={form.city}
-                onChange={(e) => updateField("city", e.target.value)}
-              />
-            )}
-
-           <textarea
-            style={{ 
-             ...inputStyle, 
-             height: 80,
-             resize: "none"
-            }}
-            placeholder="Anything extra (optional)"
-            value={form.extraInfo}
-            onChange={(e) => updateField("extraInfo", e.target.value)}
-            />
-
-            {anyPersonalizedInput ? (
               <div style={{ display: "flex", gap: 10 }}>
+                <input
+                  style={inputStyle}
+                  placeholder="Min age"
+                  value={form.minAge}
+                  onChange={(e) =>
+                    updateField("minAge", e.target.value.replace(/\D/g, ""))
+                  }
+                />
+                <input
+                  style={inputStyle}
+                  placeholder="Max age"
+                  value={form.maxAge}
+                  onChange={(e) =>
+                    updateField("maxAge", e.target.value.replace(/\D/g, ""))
+                  }
+                />
+              </div>
+
+              <input
+                style={inputStyle}
+                placeholder="Number of people"
+                value={form.numPeople}
+                onChange={(e) =>
+                  updateField("numPeople", e.target.value.replace(/\D/g, ""))
+                }
+              />
+
+              <input
+                style={inputStyle}
+                placeholder="Country"
+                value={form.country}
+                onChange={(e) => updateField("country", e.target.value)}
+              />
+
+              {form.country && (
+                <input
+                  style={inputStyle}
+                  placeholder="State / Province"
+                  value={form.state}
+                  onChange={(e) => updateField("state", e.target.value)}
+                />
+              )}
+
+              {form.state && (
+                <input
+                  style={inputStyle}
+                  placeholder="City / Town"
+                  value={form.city}
+                  onChange={(e) => updateField("city", e.target.value)}
+                />
+              )}
+
+              <textarea
+                style={{
+                  ...inputStyle,
+                  height: 80,
+                  resize: "none",
+                }}
+                placeholder="Anything extra (optional)"
+                value={form.extraInfo}
+                onChange={(e) => updateField("extraInfo", e.target.value)}
+              />
+
+              {anyPersonalizedInput ? (
                 <button type="submit" style={buttonPrimary}>
                   Generate Activity
                 </button>
-              </div>
-            ) : (
-              <div style={{ color: "#888", fontSize: 13 }}>
-                Select or type something to enable “Generate activity”.
-              </div>
-            )}
-          </div>
-        </form>
-      )}
+              ) : (
+                <div style={{ color: "#888", fontSize: 13 }}>
+                  Select or type something to enable “Generate activity”.
+                </div>
+              )}
+            </div>
+          </form>
+        )}
+      </div>
     </div>
   );
 }
