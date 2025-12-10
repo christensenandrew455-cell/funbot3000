@@ -267,11 +267,15 @@ export default function Home() {
               />
             )}
 
-            <textarea
-              style={{ ...inputStyle, height: 80 }}
-              placeholder="Anything extra (optional)"
-              value={form.extraInfo}
-              onChange={(e) => updateField("extraInfo", e.target.value)}
+           <textarea
+            style={{ 
+             ...inputStyle, 
+             height: 80,
+             resize: "none"
+            }}
+            placeholder="Anything extra (optional)"
+            value={form.extraInfo}
+            onChange={(e) => updateField("extraInfo", e.target.value)}
             />
 
             {anyPersonalizedInput ? (
