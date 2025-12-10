@@ -14,17 +14,11 @@ export default function ResultsClient() {
       const rawData = sessionStorage.getItem("activityData");
       const rawAi = sessionStorage.getItem("aiResult");
 
-      if (rawData === null) setSessionData(null);
-      else {
-        try { setSessionData(JSON.parse(rawData)); } 
-        catch { setSessionData(null); }
-      }
+      if (!rawData) setSessionData(null);
+      else setSessionData(JSON.parse(rawData));
 
-      if (rawAi) {
-        try { setAiResult(JSON.parse(rawAi)); } 
-        catch { setAiResult(null); }
-      } else setAiResult(null);
-
+      if (rawAi) setAiResult(JSON.parse(rawAi));
+      else setAiResult(null);
     } catch {
       setSessionData(null);
       setAiResult(null);
@@ -48,7 +42,8 @@ export default function ResultsClient() {
 
       try {
         sessionStorage.setItem("aiResult", JSON.stringify(json.aiResult));
-        if (json.aiResult?.title) sessionStorage.setItem("previousActivity", json.aiResult.title);
+        if (json.aiResult?.title)
+          sessionStorage.setItem("previousActivity", json.aiResult.title);
       } catch {}
     } catch {
       setAiResult(null);
@@ -67,7 +62,9 @@ export default function ResultsClient() {
   }
 
   function handleSaveEdits(data) {
-    try { sessionStorage.setItem("activityData", JSON.stringify(data)); } catch {}
+    try {
+      sessionStorage.setItem("activityData", JSON.stringify(data));
+    } catch {}
     setSessionData(data);
     setEditing(false);
     fetchAi(data);
@@ -88,6 +85,7 @@ export default function ResultsClient() {
     padding: 20,
     borderRadius: 16,
     boxShadow: "0 4px 14px rgba(0,0,0,0.08)",
+    maxWidth: 720,
     width: "100%",
   };
 
@@ -131,8 +129,8 @@ export default function ResultsClient() {
   if (editing)
     return (
       <div style={fullCenter}>
-        <div style={{ maxWidth: 720, width: "100%" }}>
-          <h2>Edit Your Preferences</h2>
+        <div style={cardStyle}>
+          <h2 style={{ textAlign: "center", marginBottom: 16 }}>Edit Your Preferences</h2>
           <EditForm
             initial={sessionData}
             onSave={handleSaveEdits}
@@ -145,16 +143,16 @@ export default function ResultsClient() {
   if (!aiResult)
     return (
       <div style={fullCenter}>
-        <div style={{ maxWidth: 720, width: "100%" }}>
-          <h1 style={{ fontSize: 24 }}>No activity found</h1>
-          <p style={{ marginTop: 8 }}>You haven't generated an activity yet.</p>
-          <div style={{ marginTop: 18 }}>
-            <EditForm
-              initial={sessionData !== null ? sessionData : {}}
-              onSave={(data) => { setSessionData(data); fetchAi(data); }}
-              onCancel={() => {}}
-            />
-          </div>
+        <div style={cardStyle}>
+          <h1 style={{ fontSize: 24, textAlign: "center" }}>No activity found</h1>
+          <p style={{ marginTop: 8, textAlign: "center" }}>
+            You haven't generated an activity yet.
+          </p>
+          <EditForm
+            initial={sessionData !== null ? sessionData : {}}
+            onSave={(data) => { setSessionData(data); fetchAi(data); }}
+            onCancel={() => {}}
+          />
         </div>
       </div>
     );
@@ -208,7 +206,9 @@ function EditForm({ initial = {}, onSave, onCancel }) {
     city: initial?.city || "",
   });
 
-  function update(k, v) { setState((s) => ({ ...s, [k]: v })); }
+  function update(k, v) {
+    setState((s) => ({ ...s, [k]: v }));
+  }
 
   const inputStyle = { width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ddd", fontSize: 14 };
   const labelStyle = { display: "flex", flexDirection: "column", gap: 6, fontSize: 14, fontWeight: 600 };
@@ -216,7 +216,7 @@ function EditForm({ initial = {}, onSave, onCancel }) {
   return (
     <form
       onSubmit={(e) => { e.preventDefault(); onSave(state); }}
-      style={{ marginTop: 8, display: "grid", gap: 10 }}
+      style={{ display: "grid", gap: 10 }}
     >
       <label style={labelStyle}>
         Personality:
@@ -259,7 +259,7 @@ function EditForm({ initial = {}, onSave, onCancel }) {
       {state.state && <input placeholder="City / Town" value={state.city} onChange={(e) => update("city", e.target.value)} style={inputStyle} />}
       <textarea placeholder="Extra notes" value={state.extraInfo} onChange={(e) => update("extraInfo", e.target.value)} style={{ ...inputStyle, height: 80, resize: "none" }} />
 
-      <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
+      <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 12 }}>
         <button type="submit" style={{ ...buttonPrimary }}>Save & Generate Activity</button>
         <button type="button" onClick={onCancel} style={{ ...buttonSecondary }}>Cancel</button>
       </div>
