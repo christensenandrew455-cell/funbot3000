@@ -12,14 +12,6 @@ export default function RootLayout({ children }) {
     background: '#f9f9f9',
   };
 
-  const footerLinks = {
-    display: 'flex',
-    justifyContent: 'center',
-    gap: 20,
-    flexWrap: 'wrap',
-    marginTop: 8,
-  };
-
   const linkStyle = {
     color: '#4A6CF7',
     textDecoration: 'none',
@@ -31,14 +23,7 @@ export default function RootLayout({ children }) {
       <body style={{ margin: 0 }}>
         {children}
         <footer style={footerStyle}>
-          <div>
-            <strong>Fun Bot 3000</strong> helps you discover fun, personalized activities quickly and easily—whether you want something random or tailored to your preferences.
-          </div>
-          <div style={footerLinks}>
-            <a href="/faq" style={linkStyle}>FAQ</a>
-            <a href="/privacy" style={linkStyle}>Privacy Policy</a>
-            <a href="/learn-more" style={linkStyle}>Learn More</a>
-          </div>
+          <a href="/privacy" style={linkStyle}>Privacy Policy</a>
         </footer>
       </body>
     </html>
