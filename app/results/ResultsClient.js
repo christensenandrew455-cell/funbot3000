@@ -323,7 +323,7 @@ function EditForm({ initial = {}, onSave, onCancel }) {
           style={inputStyle}
         />
       )}
-      {state.state && (
+      {state.country && (
         <input
           placeholder="City / Town"
           value={state.city}
