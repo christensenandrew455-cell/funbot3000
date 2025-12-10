@@ -60,7 +60,9 @@ export async function POST(req) {
     // ------------------------------
     const userPrompt = `
 You are Fun Bot 3000. Suggest ONE engaging, realistic, modern activity.
-Use the provided constraints to tailor the activity.
+Use the provided constraints to tailor the activity. If you are givin no info 
+generate a activity that is fun for all ages all places and doable for all
+types of people.
 
 Randomizer seed: ${randomSeed}
 
