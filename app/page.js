@@ -304,7 +304,7 @@ export default function Home() {
                 />
               )}
 
-              {form.state && (
+              {form.country && (
                 <input
                   style={styles.input}
                   placeholder="City / Town"
