@@ -360,11 +360,5 @@ export default function Home() {
           </a>.
         </p>
       </div>
-
-      {/* Footer */}
-      <footer style={styles.footer}>
-        <a href="/privacy" style={styles.footerLink}>Privacy Policy</a>
-      </footer>
-    </div>
   );
 }
