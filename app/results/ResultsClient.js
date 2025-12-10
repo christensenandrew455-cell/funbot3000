@@ -13,12 +13,8 @@ export default function ResultsClient() {
     try {
       const rawData = sessionStorage.getItem("activityData");
       const rawAi = sessionStorage.getItem("aiResult");
-
-      if (!rawData) setSessionData(null);
-      else setSessionData(JSON.parse(rawData));
-
-      if (rawAi) setAiResult(JSON.parse(rawAi));
-      else setAiResult(null);
+      setSessionData(rawData ? JSON.parse(rawData) : null);
+      setAiResult(rawAi ? JSON.parse(rawAi) : null);
     } catch {
       setSessionData(null);
       setAiResult(null);
@@ -30,7 +26,6 @@ export default function ResultsClient() {
   async function fetchAi(data) {
     setLoading(true);
     const previousActivity = sessionStorage.getItem("previousActivity") || "";
-
     try {
       const res = await fetch("/api/generate", {
         method: "POST",
@@ -39,7 +34,6 @@ export default function ResultsClient() {
       });
       const json = await res.json();
       setAiResult(json.aiResult);
-
       try {
         sessionStorage.setItem("aiResult", JSON.stringify(json.aiResult));
         if (json.aiResult?.title)
@@ -50,11 +44,6 @@ export default function ResultsClient() {
     } finally {
       setLoading(false);
     }
-  }
-
-  async function handleGenerateAgain() {
-    await fetchAi(sessionData ?? {});
-    setShowLong(false);
   }
 
   function handleEditData() {
@@ -68,6 +57,11 @@ export default function ResultsClient() {
     setSessionData(data);
     setEditing(false);
     fetchAi(data);
+  }
+
+  async function handleGenerateAgain() {
+    await fetchAi(sessionData ?? {});
+    setShowLong(false);
   }
 
   // --- STYLES ---
@@ -119,23 +113,14 @@ export default function ResultsClient() {
     flexWrap: "wrap",
   };
 
-  if (loading)
-    return (
-      <div style={fullCenter}>
-        <div>Loading...</div>
-      </div>
-    );
+  if (loading) return <div style={fullCenter}>Loading...</div>;
 
   if (editing)
     return (
       <div style={fullCenter}>
         <div style={cardStyle}>
           <h2 style={{ textAlign: "center", marginBottom: 16 }}>Edit Your Preferences</h2>
-          <EditForm
-            initial={sessionData}
-            onSave={handleSaveEdits}
-            onCancel={() => setEditing(false)}
-          />
+          <EditForm initial={sessionData} onSave={handleSaveEdits} onCancel={() => setEditing(false)} />
         </div>
       </div>
     );
@@ -145,9 +130,7 @@ export default function ResultsClient() {
       <div style={fullCenter}>
         <div style={cardStyle}>
           <h1 style={{ fontSize: 24, textAlign: "center" }}>No activity found</h1>
-          <p style={{ marginTop: 8, textAlign: "center" }}>
-            You haven't generated an activity yet.
-          </p>
+          <p style={{ marginTop: 8, textAlign: "center" }}>You haven't generated an activity yet.</p>
           <EditForm
             initial={sessionData !== null ? sessionData : {}}
             onSave={(data) => { setSessionData(data); fetchAi(data); }}
@@ -169,23 +152,15 @@ export default function ResultsClient() {
 
         {!showLong ? (
           <div style={{ textAlign: "center", marginTop: 12 }}>
-            <button onClick={() => setShowLong(true)} style={buttonSecondary}>
-              More
-            </button>
+            <button onClick={() => setShowLong(true)} style={buttonSecondary}>More</button>
           </div>
         ) : (
           <div style={{ marginTop: 12, textAlign: "center" }}>{long}</div>
         )}
 
         <div style={centerButtons}>
-          <button onClick={handleGenerateAgain} style={buttonPrimary}>
-            Don't like it? Generate again
-          </button>
-          {sessionData !== null && (
-            <button onClick={handleEditData} style={buttonSecondary}>
-              Edit data
-            </button>
-          )}
+          <button onClick={handleGenerateAgain} style={buttonPrimary}>Don't like it? Generate again</button>
+          {sessionData !== null && <button onClick={handleEditData} style={buttonSecondary}>Edit data</button>}
         </div>
       </div>
     </div>
@@ -214,10 +189,7 @@ function EditForm({ initial = {}, onSave, onCancel }) {
   const labelStyle = { display: "flex", flexDirection: "column", gap: 6, fontSize: 14, fontWeight: 600 };
 
   return (
-    <form
-      onSubmit={(e) => { e.preventDefault(); onSave(state); }}
-      style={{ display: "grid", gap: 10 }}
-    >
+    <form onSubmit={(e) => { e.preventDefault(); onSave(state); }} style={{ display: "grid", gap: 10 }}>
       <label style={labelStyle}>
         Personality:
         <select value={state.personality} onChange={(e) => update("personality", e.target.value)} style={inputStyle}>
@@ -260,8 +232,8 @@ function EditForm({ initial = {}, onSave, onCancel }) {
       <textarea placeholder="Extra notes" value={state.extraInfo} onChange={(e) => update("extraInfo", e.target.value)} style={{ ...inputStyle, height: 80, resize: "none" }} />
 
       <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 12 }}>
-        <button type="submit" style={{ ...buttonPrimary }}>Save & Generate Activity</button>
-        <button type="button" onClick={onCancel} style={{ ...buttonSecondary }}>Cancel</button>
+        <button type="submit" style={buttonPrimary}>Save & Generate Activity</button>
+        <button type="button" onClick={onCancel} style={buttonSecondary}>Cancel</button>
       </div>
     </form>
   );
