@@ -13,8 +13,26 @@ export default function ResultsClient() {
     try {
       const rawData = sessionStorage.getItem("activityData");
       const rawAi = sessionStorage.getItem("aiResult");
-      setSessionData(rawData ? JSON.parse(rawData) : null);
-      setAiResult(rawAi ? JSON.parse(rawAi) : null);
+
+      if (rawData === null) {
+        setSessionData(null);
+      } else {
+        try {
+          setSessionData(JSON.parse(rawData));
+        } catch {
+          setSessionData(null);
+        }
+      }
+
+      if (rawAi) {
+        try {
+          setAiResult(JSON.parse(rawAi));
+        } catch {
+          setAiResult(null);
+        }
+      } else {
+        setAiResult(null);
+      }
     } catch {
       setSessionData(null);
       setAiResult(null);
@@ -25,25 +43,38 @@ export default function ResultsClient() {
 
   async function fetchAi(data) {
     setLoading(true);
+
     const previousActivity = sessionStorage.getItem("previousActivity") || "";
+
     try {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, previousActivity }),
+        body: JSON.stringify({
+          ...data,
+          previousActivity,
+        }),
       });
+
       const json = await res.json();
       setAiResult(json.aiResult);
+
       try {
         sessionStorage.setItem("aiResult", JSON.stringify(json.aiResult));
-        if (json.aiResult?.title)
+        if (json.aiResult?.title) {
           sessionStorage.setItem("previousActivity", json.aiResult.title);
+        }
       } catch {}
     } catch {
       setAiResult(null);
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleGenerateAgain() {
+    await fetchAi(sessionData ?? {});
+    setShowLong(false);
   }
 
   function handleEditData() {
@@ -57,11 +88,6 @@ export default function ResultsClient() {
     setSessionData(data);
     setEditing(false);
     fetchAi(data);
-  }
-
-  async function handleGenerateAgain() {
-    await fetchAi(sessionData ?? {});
-    setShowLong(false);
   }
 
   // --- STYLES ---
@@ -113,29 +139,50 @@ export default function ResultsClient() {
     flexWrap: "wrap",
   };
 
-  if (loading) return <div style={fullCenter}>Loading...</div>;
+  if (loading)
+    return (
+      <div style={fullCenter}>
+        <div>Loading...</div>
+      </div>
+    );
 
-  if (editing)
+  if (editing) {
     return (
       <div style={fullCenter}>
         <div style={cardStyle}>
           <h2 style={{ textAlign: "center", marginBottom: 16 }}>Edit Your Preferences</h2>
-          <EditForm initial={sessionData} onSave={handleSaveEdits} onCancel={() => setEditing(false)} />
+          <EditForm
+            initial={sessionData}
+            onSave={handleSaveEdits}
+            onCancel={() => setEditing(false)}
+          />
         </div>
       </div>
     );
+  }
 
   if (!aiResult)
     return (
       <div style={fullCenter}>
         <div style={cardStyle}>
           <h1 style={{ fontSize: 24, textAlign: "center" }}>No activity found</h1>
-          <p style={{ marginTop: 8, textAlign: "center" }}>You haven't generated an activity yet.</p>
-          <EditForm
-            initial={sessionData !== null ? sessionData : {}}
-            onSave={(data) => { setSessionData(data); fetchAi(data); }}
-            onCancel={() => {}}
-          />
+          <p style={{ marginTop: 8, textAlign: "center" }}>
+            You haven't generated an activity yet.
+          </p>
+
+          <div style={{ marginTop: 18 }}>
+            <EditForm
+              initial={sessionData !== null ? sessionData : {}}
+              onSave={(data) => {
+                try {
+                  sessionStorage.setItem("activityData", JSON.stringify(data));
+                } catch {}
+                setSessionData(data);
+                fetchAi(data);
+              }}
+              onCancel={() => {}}
+            />
+          </div>
         </div>
       </div>
     );
@@ -152,15 +199,23 @@ export default function ResultsClient() {
 
         {!showLong ? (
           <div style={{ textAlign: "center", marginTop: 12 }}>
-            <button onClick={() => setShowLong(true)} style={buttonSecondary}>More</button>
+            <button onClick={() => setShowLong(true)} style={buttonSecondary}>
+              More
+            </button>
           </div>
         ) : (
           <div style={{ marginTop: 12, textAlign: "center" }}>{long}</div>
         )}
 
         <div style={centerButtons}>
-          <button onClick={handleGenerateAgain} style={buttonPrimary}>Don't like it? Generate again</button>
-          {sessionData !== null && <button onClick={handleEditData} style={buttonSecondary}>Edit data</button>}
+          <button onClick={handleGenerateAgain} style={buttonPrimary}>
+            Don't like it? Generate again
+          </button>
+          {sessionData !== null && (
+            <button onClick={handleEditData} style={buttonSecondary}>
+              Edit data
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -189,7 +244,13 @@ function EditForm({ initial = {}, onSave, onCancel }) {
   const labelStyle = { display: "flex", flexDirection: "column", gap: 6, fontSize: 14, fontWeight: 600 };
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onSave(state); }} style={{ display: "grid", gap: 10 }}>
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave(state);
+      }}
+      style={{ display: "grid", gap: 10 }}
+    >
       <label style={labelStyle}>
         Personality:
         <select value={state.personality} onChange={(e) => update("personality", e.target.value)} style={inputStyle}>
