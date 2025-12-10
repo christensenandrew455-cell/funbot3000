@@ -98,13 +98,13 @@ export default function Home() {
   }
 
   // ---- UI STYLES ----
-
   const fullCenter = {
     minHeight: "100vh",
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
+    flexDirection: "column",
   };
 
   const cardStyle = {
@@ -113,6 +113,7 @@ export default function Home() {
     borderRadius: 16,
     boxShadow: "0 4px 14px rgba(0,0,0,0.08)",
     marginTop: 20,
+    width: "100%",
   };
 
   const buttonPrimary = {
@@ -154,6 +155,13 @@ export default function Home() {
     fontWeight: 600,
   };
 
+  const centerButtons = {
+    display: "flex",
+    justifyContent: "center",
+    gap: 12,
+    marginTop: 20,
+  };
+
   return (
     <div style={fullCenter}>
       <div style={{ maxWidth: 720, width: "100%" }}>
@@ -169,7 +177,7 @@ export default function Home() {
         </h1>
 
         {/* ACTION BAR */}
-        <div style={{ marginTop: 20, display: "flex", gap: 12 }}>
+        <div style={centerButtons}>
           <button
             type="button"
             onClick={() => setPersonalizeOpen((v) => !v)}
