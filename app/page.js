@@ -118,6 +118,13 @@ export default function Home() {
       fontWeight: 500,
       transition: "0.2s",
     },
+    centerButtons: {
+      display: "flex",
+      justifyContent: "center",
+      gap: 16,
+      marginTop: 24,
+      flexWrap: "wrap",
+    },
     input: {
       width: "100%",
       padding: 12,
@@ -133,19 +140,6 @@ export default function Home() {
       gap: 6,
       fontSize: 14,
       fontWeight: 600,
-    },
-    centerButtons: {
-      display: "flex",
-      justifyContent: "center",
-      gap: 16,
-      marginTop: 24,
-      flexWrap: "wrap",
-    },
-    tagline: {
-      textAlign: "center",
-      color: "#555",
-      marginTop: 8,
-      fontSize: 18,
     },
     section: {
       marginTop: 40,
@@ -166,18 +160,11 @@ export default function Home() {
       color: "#555",
       lineHeight: 1.6,
     },
-    footer: {
-      marginTop: 40,
-      padding: "20px 10px",
+    tagline: {
       textAlign: "center",
-      fontSize: 14,
       color: "#555",
-      borderTop: "1px solid #ddd",
-    },
-    footerLink: {
-      color: "#4A6CF7",
-      textDecoration: "none",
-      fontWeight: 500,
+      marginTop: 8,
+      fontSize: 18,
     },
   };
 
@@ -214,10 +201,11 @@ export default function Home() {
           )}
         </div>
 
-        {/* Personalization Form */}
+        {/* MATCHED FORM FROM RESULTS PAGE */}
         {personalizeOpen && (
           <form style={{ ...styles.card, marginTop: 20 }} onSubmit={handleGenerateActivity}>
             <div style={{ display: "grid", gap: 14 }}>
+              {/* SAME EXACT FIELDS AS RESULTS PAGE */}
               <label style={styles.label}>
                 Personality:
                 <select
@@ -338,28 +326,20 @@ export default function Home() {
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>Learn More</h2>
         <p style={styles.sectionContent}>
-          Fun Bot 3000 is designed to help you discover fun activities instantly.
-          You can either generate random suggestions or personalize them according to your preferences, location, season, and more.
+          Fun Bot 3000 helps you instantly discover fun activities!
         </p>
       </div>
 
-      {/* FAQ Section */}
+      {/* FAQ */}
       <div style={styles.section}>
         <h2 style={styles.sectionTitle}>FAQ</h2>
         <p style={styles.sectionContent}>
-          <strong>Q: Is it free?</strong> <br /> Yes, Fun Bot 3000 is completely free to use. <br /><br />
-          <strong>Q: Do you keep my data?</strong> <br /> No, Your data is only stored breifly and safley until you close the site in witch it is deleted. <br /><br />
           <strong>Q: Where can I find other cool apps?</strong> <br />
           All right here:{" "}
-          <a href="https://thetestifyai.com" target="_blank" rel="noopener noreferrer">
-            TheTestifyAI
-          </a>{" "}
-          and{" "}
-          <a href="https://ratemyroutine.com" target="_blank" rel="noopener noreferrer">
-            RateMyRoutine
-          </a>.
+          <a href="https://thetestifyai.com" target="_blank">TheTestifyAI</a> and{" "}
+          <a href="https://ratemyroutine.com" target="_blank">RateMyRoutine</a>.
         </p>
       </div>
     </div>
-  );  
+  );
 }
