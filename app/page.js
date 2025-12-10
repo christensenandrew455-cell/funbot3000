@@ -81,10 +81,9 @@ export default function Home() {
     container: {
       minHeight: "100vh",
       display: "flex",
-      justifyContent: "center",
+      flexDirection: "column",
       alignItems: "center",
       padding: 20,
-      flexDirection: "column",
       background: "linear-gradient(to right, #f0f4ff, #ffffff)",
       fontFamily: "'Inter', sans-serif",
     },
@@ -148,10 +147,43 @@ export default function Home() {
       marginTop: 8,
       fontSize: 18,
     },
+    section: {
+      marginTop: 40,
+      maxWidth: 720,
+      width: "100%",
+      background: "white",
+      padding: 24,
+      borderRadius: 16,
+      boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
+    },
+    sectionTitle: {
+      fontSize: 22,
+      fontWeight: 700,
+      marginBottom: 12,
+    },
+    sectionContent: {
+      fontSize: 15,
+      color: "#555",
+      lineHeight: 1.6,
+    },
+    footer: {
+      marginTop: 40,
+      padding: "20px 10px",
+      textAlign: "center",
+      fontSize: 14,
+      color: "#555",
+      borderTop: "1px solid #ddd",
+    },
+    footerLink: {
+      color: "#4A6CF7",
+      textDecoration: "none",
+      fontWeight: 500,
+    },
   };
 
   return (
     <div style={styles.container}>
+      {/* Main Card */}
       <div style={styles.card}>
         <h1 style={{ fontSize: 36, fontWeight: 800, textAlign: "center" }}>
           Fun Bot 3000 🎉
@@ -182,8 +214,9 @@ export default function Home() {
           )}
         </div>
 
+        {/* Personalization Form */}
         {personalizeOpen && (
-          <form onSubmit={handleGenerateActivity} style={{ ...styles.card, marginTop: 20 }}>
+          <form style={{ ...styles.card, marginTop: 20 }} onSubmit={handleGenerateActivity}>
             <div style={{ display: "grid", gap: 14 }}>
               <label style={styles.label}>
                 Personality:
@@ -300,6 +333,38 @@ export default function Home() {
           </form>
         )}
       </div>
+
+      {/* Learn More Section */}
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle}>Learn More</h2>
+        <p style={styles.sectionContent}>
+          Fun Bot 3000 is designed to help you discover fun activities instantly.
+          You can either generate random suggestions or personalize them according to your preferences, location, season, and more.
+        </p>
+      </div>
+
+      {/* FAQ Section */}
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle}>FAQ</h2>
+        <p style={styles.sectionContent}>
+          <strong>Q: Is it free?</strong> <br /> Yes, Fun Bot 3000 is completely free to use. <br /><br />
+          <strong>Q: Do you keep my data?</strong> <br /> No, Your data is only stored breifly and safley until you close the site in witch it is deleted. <br /><br />
+          <strong>Q: Where can I find other cool apps?</strong> <br />
+          All right here:{" "}
+          <a href="https://thetestifyai.com" target="_blank" rel="noopener noreferrer">
+            TheTestifyAI
+          </a>{" "}
+          and{" "}
+          <a href="https://ratemyroutine.com" target="_blank" rel="noopener noreferrer">
+            RateMyRoutine
+          </a>.
+        </p>
+      </div>
+
+      {/* Footer */}
+      <footer style={styles.footer}>
+        <a href="/privacy" style={styles.footerLink}>Privacy Policy</a>
+      </footer>
     </div>
   );
 }
