@@ -92,7 +92,7 @@ export default function Home() {
       boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
       marginTop: 20,
       width: "100%",
-      maxWidth: 480,
+      maxWidth: 420, // made thinner
     },
     buttonPrimary: {
       background: "#4A6CF7",
@@ -104,6 +104,8 @@ export default function Home() {
       cursor: "pointer",
       fontWeight: 600,
       transition: "0.2s",
+      maxWidth: 200,
+      textAlign: "center",
     },
     buttonSecondary: {
       background: "#f1f1f1",
@@ -115,6 +117,8 @@ export default function Home() {
       cursor: "pointer",
       fontWeight: 500,
       transition: "0.2s",
+      maxWidth: 200,
+      textAlign: "center",
     },
     centerButtons: {
       display: "flex",
@@ -131,6 +135,7 @@ export default function Home() {
       fontSize: 14,
       outline: "none",
       transition: "0.2s",
+      textAlign: "center", // center the text inside selects
     },
     label: {
       display: "flex",
@@ -138,10 +143,11 @@ export default function Home() {
       gap: 6,
       fontSize: 14,
       fontWeight: 600,
+      alignItems: "center", // center label text
     },
     section: {
       marginTop: 40,
-      maxWidth: 480,
+      maxWidth: 420, // made thinner
       width: "100%",
       background: "white",
       padding: 24,
@@ -152,11 +158,13 @@ export default function Home() {
       fontSize: 22,
       fontWeight: 700,
       marginBottom: 12,
+      textAlign: "center",
     },
     sectionContent: {
       fontSize: 15,
       color: "#555",
       lineHeight: 1.6,
+      textAlign: "center",
     },
     tagline: {
       textAlign: "center",
@@ -312,7 +320,7 @@ export default function Home() {
                   {loading ? "Generating..." : "Generate Activity"}
                 </button>
               ) : (
-                <div style={{ color: "#888", fontSize: 13 }}>
+                <div style={{ color: "#888", fontSize: 13, textAlign: "center" }}>
                   Fill in any field to enable “Generate Activity”.
                 </div>
               )}
