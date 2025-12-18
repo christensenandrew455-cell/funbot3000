@@ -258,9 +258,9 @@ export default function Home() {
         <h2 style={styles.sectionTitle}>Learn More</h2>
 
         <p style={styles.sectionContent}>
-          Fun Bot 3000 is an AI-powered activity generator that helps you instantly
-          discover fun, creative, and personalized activities—or surprise yourself
-          with something completely random.
+        Fun Bot 3000 is an AI-powered tool that instantly creates fun, engaging 
+        activities—either completely random or fully personalized—at no cost 
+        and with minimal effort required.
         </p>
 
         {learnMoreOpen && (
@@ -300,6 +300,41 @@ export default function Home() {
         >
           {learnMoreOpen ? "Show less" : "Read more"}
         </button>
+      </div>
+
+      {/* FAQ */}
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle}>FAQ</h2>
+
+        <p style={styles.sectionContent}>
+          <strong>Q: Is Fun Bot 3000 free to use?</strong><br />
+          yes. Fun Bot 3000 is completely free to use
+        </p>
+
+        <p style={styles.sectionContent}>
+          <strong>Q: Do I have to fill out personalization?</strong><br />
+          No. You can leave everything blank and generate a completely random activity.
+        </p>
+
+        <p style={styles.sectionContent}>
+          <strong>Q: Does Fun Bot 3000 save my personal data?</strong><br />
+          No personal data is permanently stored. Preferences are only saved locally
+          in your browser to improve your experience.
+        </p>
+
+        <p style={styles.sectionContent}>
+          <strong>Q: Why am I getting similar activities?</strong><br />
+          The AI avoids repeating the same activity back-to-back, but similar inputs
+          may result in similar suggestions.
+        </p>
+
+        <p style={styles.sectionContent}>
+          <strong>Q: Where can I find other cool apps?</strong><br />
+          All right here:{" "}
+          <a href="https://thetestifyai.com" target="_blank">TheTestifyAI</a>{" "}
+          and{" "}
+          <a href="https://ratemyroutine.com" target="_blank">RateMyRoutine</a>.
+        </p>
       </div>
     </div>
   );
