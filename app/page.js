@@ -92,7 +92,18 @@ export default function Home() {
       boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
       marginTop: 20,
       width: "100%",
-      maxWidth: 480, // made thinner
+      maxWidth: 480,
+    },
+    personalizeCard: {
+      background: "white",
+      padding: 20,
+      borderRadius: 16,
+      boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
+      marginTop: 20,
+      width: "100%",
+      maxWidth: 360,
+      marginLeft: "auto",
+      marginRight: "auto",
     },
     buttonPrimary: {
       background: "#4A6CF7",
@@ -135,7 +146,7 @@ export default function Home() {
       fontSize: 14,
       outline: "none",
       transition: "0.2s",
-      textAlign: "center", // center the text inside selects
+      textAlign: "center",
     },
     label: {
       display: "flex",
@@ -143,11 +154,11 @@ export default function Home() {
       gap: 6,
       fontSize: 14,
       fontWeight: 600,
-      alignItems: "center", // center label text
+      alignItems: "center",
     },
     section: {
       marginTop: 40,
-      maxWidth: 480, // made thinner
+      maxWidth: 480,
       width: "100%",
       background: "white",
       padding: 24,
@@ -209,7 +220,7 @@ export default function Home() {
 
         {/* PERSONALIZATION FORM */}
         {personalizeOpen && (
-          <form style={{ ...styles.card, marginTop: 20 }} onSubmit={handleGenerateActivity}>
+          <form style={styles.personalizeCard} onSubmit={handleGenerateActivity}>
             <div style={{ display: "grid", gap: 14 }}>
               <label style={styles.label}>
                 Personality:
