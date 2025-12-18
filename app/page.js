@@ -147,7 +147,7 @@ export default function Home() {
     },
     section: {
       marginTop: 40,
-      maxWidth: 420, // made thinner
+      maxWidth: 480, // made thinner
       width: "100%",
       background: "white",
       padding: 24,
