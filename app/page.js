@@ -7,13 +7,11 @@ const DEFAULT_FORM = {
   personality: "",
   locationPref: "",
   season: "",
-  minAge: "",
-  maxAge: "",
-  numPeople: "",
+  ageCategory: "", // kids, teenagers, adults, mixed
+  groupSize: "",   // solo, 2-4, group
+  chaos: "normal", // normal, getting there, crazy
+  cityType: "",    // city or town
   extraInfo: "",
-  country: "",
-  state: "",
-  city: "",
 };
 
 export default function Home() {
@@ -201,11 +199,10 @@ export default function Home() {
           )}
         </div>
 
-        {/* MATCHED FORM FROM RESULTS PAGE */}
+        {/* PERSONALIZATION FORM */}
         {personalizeOpen && (
           <form style={{ ...styles.card, marginTop: 20 }} onSubmit={handleGenerateActivity}>
             <div style={{ display: "grid", gap: 14 }}>
-              {/* SAME EXACT FIELDS AS RESULTS PAGE */}
               <label style={styles.label}>
                 Personality:
                 <select
@@ -248,58 +245,60 @@ export default function Home() {
                 </select>
               </label>
 
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <input
+              <label style={styles.label}>
+                Age Category:
+                <select
                   style={styles.input}
-                  placeholder="Min age"
-                  value={form.minAge}
-                  onChange={(e) =>
-                    updateField("minAge", e.target.value.replace(/\D/g, ""))
-                  }
-                />
-                <input
+                  value={form.ageCategory}
+                  onChange={(e) => updateField("ageCategory", e.target.value)}
+                >
+                  <option value="">Select...</option>
+                  <option value="kids">Kids</option>
+                  <option value="teenagers">Teenagers</option>
+                  <option value="adults">Adults</option>
+                  <option value="mixed">Mixed</option>
+                </select>
+              </label>
+
+              <label style={styles.label}>
+                Group Size:
+                <select
                   style={styles.input}
-                  placeholder="Max age"
-                  value={form.maxAge}
-                  onChange={(e) =>
-                    updateField("maxAge", e.target.value.replace(/\D/g, ""))
-                  }
-                />
-              </div>
+                  value={form.groupSize}
+                  onChange={(e) => updateField("groupSize", e.target.value)}
+                >
+                  <option value="">Select...</option>
+                  <option value="solo">Solo (1)</option>
+                  <option value="2-4">2-4</option>
+                  <option value="group">Group (5+)</option>
+                </select>
+              </label>
 
-              <input
-                style={styles.input}
-                placeholder="Number of people"
-                value={form.numPeople}
-                onChange={(e) =>
-                  updateField("numPeople", e.target.value.replace(/\D/g, ""))
-                }
-              />
-
-              <input
-                style={styles.input}
-                placeholder="Country"
-                value={form.country}
-                onChange={(e) => updateField("country", e.target.value)}
-              />
-
-              {form.country && (
-                <input
+              <label style={styles.label}>
+                Chaos Level:
+                <select
                   style={styles.input}
-                  placeholder="State / Province"
-                  value={form.state}
-                  onChange={(e) => updateField("state", e.target.value)}
-                />
-              )}
+                  value={form.chaos}
+                  onChange={(e) => updateField("chaos", e.target.value)}
+                >
+                  <option value="normal">Normal</option>
+                  <option value="getting there">Getting There</option>
+                  <option value="crazy">Crazy</option>
+                </select>
+              </label>
 
-              {form.country && (
-                <input
+              <label style={styles.label}>
+                Location Type:
+                <select
                   style={styles.input}
-                  placeholder="City / Town"
-                  value={form.city}
-                  onChange={(e) => updateField("city", e.target.value)}
-                />
-              )}
+                  value={form.cityType}
+                  onChange={(e) => updateField("cityType", e.target.value)}
+                >
+                  <option value="">Select...</option>
+                  <option value="city">City</option>
+                  <option value="town">Town</option>
+                </select>
+              </label>
 
               <textarea
                 style={{ ...styles.input, height: 80, resize: "none" }}
