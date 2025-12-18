@@ -92,7 +92,7 @@ export default function Home() {
       boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
       marginTop: 20,
       width: "100%",
-      maxWidth: 720,
+      maxWidth: 480,
     },
     buttonPrimary: {
       background: "#4A6CF7",
@@ -141,7 +141,7 @@ export default function Home() {
     },
     section: {
       marginTop: 40,
-      maxWidth: 720,
+      maxWidth: 480,
       width: "100%",
       background: "white",
       padding: 24,
