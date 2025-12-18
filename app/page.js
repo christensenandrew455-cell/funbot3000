@@ -101,9 +101,10 @@ export default function Home() {
       boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
       marginTop: 20,
       width: "100%",
-      maxWidth: 360,
+      maxWidth: 400, // increased from 360
       marginLeft: "auto",
       marginRight: "auto",
+      boxSizing: "border-box",
     },
     buttonPrimary: {
       background: "#4A6CF7",
@@ -147,6 +148,7 @@ export default function Home() {
       outline: "none",
       transition: "0.2s",
       textAlign: "center",
+      boxSizing: "border-box",
     },
     label: {
       display: "flex",
@@ -182,6 +184,11 @@ export default function Home() {
       color: "#555",
       marginTop: 8,
       fontSize: 18,
+    },
+    submitContainer: {
+      display: "flex",
+      justifyContent: "center",
+      marginTop: 10,
     },
   };
 
@@ -222,114 +229,54 @@ export default function Home() {
         {personalizeOpen && (
           <form style={styles.personalizeCard} onSubmit={handleGenerateActivity}>
             <div style={{ display: "grid", gap: 14 }}>
-              <label style={styles.label}>
-                Personality:
-                <select
-                  style={styles.input}
-                  value={form.personality}
-                  onChange={(e) => updateField("personality", e.target.value)}
-                >
-                  <option value="">Select...</option>
-                  <option value="extrovert">Extrovert</option>
-                  <option value="introvert">Introvert</option>
-                </select>
-              </label>
-
-              <label style={styles.label}>
-                Inside / Outside:
-                <select
-                  style={styles.input}
-                  value={form.locationPref}
-                  onChange={(e) => updateField("locationPref", e.target.value)}
-                >
-                  <option value="">Select...</option>
-                  <option value="inside">Inside</option>
-                  <option value="outside">Outside</option>
-                  <option value="both">Both</option>
-                </select>
-              </label>
-
-              <label style={styles.label}>
-                Season:
-                <select
-                  style={styles.input}
-                  value={form.season}
-                  onChange={(e) => updateField("season", e.target.value)}
-                >
-                  <option value="">Select...</option>
-                  <option value="spring">Spring</option>
-                  <option value="summer">Summer</option>
-                  <option value="autumn">Autumn/Fall</option>
-                  <option value="winter">Winter</option>
-                </select>
-              </label>
-
-              <label style={styles.label}>
-                Age Category:
-                <select
-                  style={styles.input}
-                  value={form.ageCategory}
-                  onChange={(e) => updateField("ageCategory", e.target.value)}
-                >
-                  <option value="">Select...</option>
-                  <option value="kids">Kids</option>
-                  <option value="teenagers">Teenagers</option>
-                  <option value="adults">Adults</option>
-                  <option value="mixed">Mixed</option>
-                </select>
-              </label>
-
-              <label style={styles.label}>
-                Group Size:
-                <select
-                  style={styles.input}
-                  value={form.groupSize}
-                  onChange={(e) => updateField("groupSize", e.target.value)}
-                >
-                  <option value="">Select...</option>
-                  <option value="solo">Solo (1)</option>
-                  <option value="2-4">2-4</option>
-                  <option value="group">Group (5+)</option>
-                </select>
-              </label>
-
-              <label style={styles.label}>
-                Chaos Level:
-                <select
-                  style={styles.input}
-                  value={form.chaos}
-                  onChange={(e) => updateField("chaos", e.target.value)}
-                >
-                  <option value="normal">Normal</option>
-                  <option value="getting there">Getting There</option>
-                  <option value="crazy">Crazy</option>
-                </select>
-              </label>
-
-              <label style={styles.label}>
-                Location Type:
-                <select
-                  style={styles.input}
-                  value={form.cityType}
-                  onChange={(e) => updateField("cityType", e.target.value)}
-                >
-                  <option value="">Select...</option>
-                  <option value="city">City</option>
-                  <option value="town">Town</option>
-                </select>
-              </label>
+              {["personality","locationPref","season","ageCategory","groupSize","chaos","cityType"].map((key) => {
+                const labelMap = {
+                  personality: "Personality",
+                  locationPref: "Inside / Outside",
+                  season: "Season",
+                  ageCategory: "Age Category",
+                  groupSize: "Group Size",
+                  chaos: "Chaos Level",
+                  cityType: "Location Type",
+                };
+                const optionsMap = {
+                  personality: ["Select...","Extrovert","Introvert"],
+                  locationPref: ["Select...","Inside","Outside","Both"],
+                  season: ["Select...","Spring","Summer","Autumn/Fall","Winter"],
+                  ageCategory: ["Select...","Kids","Teenagers","Adults","Mixed"],
+                  groupSize: ["Select...","Solo (1)","2-4","Group (5+)"],
+                  chaos: ["Normal","Getting There","Crazy"],
+                  cityType: ["Select...","City","Town"],
+                };
+                return (
+                  <label key={key} style={styles.label}>
+                    {labelMap[key]}:
+                    <select
+                      style={styles.input}
+                      value={form[key]}
+                      onChange={(e) => updateField(key, e.target.value)}
+                    >
+                      {optionsMap[key].map((opt,i) => (
+                        <option key={i} value={opt.toLowerCase().replace(/\s|\(|\)/g,'')}>{opt}</option>
+                      ))}
+                    </select>
+                  </label>
+                )
+              })}
 
               <textarea
-                style={{ ...styles.input, height: 80, resize: "none" }}
+                style={{ ...styles.input, height: 60, resize: "none", boxSizing: "border-box" }}
                 placeholder="Anything extra (optional)"
                 value={form.extraInfo}
                 onChange={(e) => updateField("extraInfo", e.target.value)}
               />
 
               {anyPersonalizedInput ? (
-                <button type="submit" style={styles.buttonPrimary}>
-                  {loading ? "Generating..." : "Generate Activity"}
-                </button>
+                <div style={styles.submitContainer}>
+                  <button type="submit" style={styles.buttonPrimary}>
+                    {loading ? "Generating..." : "Generate Activity"}
+                  </button>
+                </div>
               ) : (
                 <div style={{ color: "#888", fontSize: 13, textAlign: "center" }}>
                   Fill in any field to enable “Generate Activity”.
@@ -361,3 +308,4 @@ export default function Home() {
     </div>
   );
 }
+
