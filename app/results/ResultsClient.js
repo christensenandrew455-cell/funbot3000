@@ -42,72 +42,54 @@ const styles = {
     cursor: "pointer",
     fontWeight: 500,
   },
-  centerButtons: {
-    display: "flex",
-    justifyContent: "center",
-    gap: 16,
-    marginTop: 24,
-    flexWrap: "wrap",
-  },
-  description: {
-    marginTop: 12,
-    fontSize: 16,
-    color: "#555",
-  },
-  longDescription: {
-    marginTop: 12,
-    fontSize: 15,
-    color: "#444",
-    lineHeight: 1.6,
-    whiteSpace: "pre-wrap",
+  input: {
+    width: "100%",
+    padding: 12,
+    borderRadius: 12,
+    border: "1px solid #ddd",
+    marginTop: 6,
   },
 };
 
 export default function ResultsClient() {
   const [loading, setLoading] = useState(true);
   const [aiResult, setAiResult] = useState(null);
-  const [showLong, setShowLong] = useState(false);
-  const [sessionData, setSessionData] = useState(null);
   const [editing, setEditing] = useState(false);
+  const [sessionData, setSessionData] = useState(null);
 
   useEffect(() => {
-    try {
-      const rawData = sessionStorage.getItem("activityData");
-      const rawAi = sessionStorage.getItem("aiResult");
-      setSessionData(rawData ? JSON.parse(rawData) : null);
-      setAiResult(rawAi ? JSON.parse(rawAi) : null);
-    } finally {
-      setLoading(false);
-    }
+    const d = sessionStorage.getItem("activityData");
+    const a = sessionStorage.getItem("aiResult");
+    setSessionData(d ? JSON.parse(d) : {});
+    setAiResult(a ? JSON.parse(a) : null);
+    setLoading(false);
   }, []);
 
   async function fetchAi(data) {
     setLoading(true);
     const previousActivity = sessionStorage.getItem("previousActivity") || "";
 
-    try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, previousActivity }),
-      });
+    const res = await fetch("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...data, previousActivity }),
+    });
 
-      const json = await res.json();
-      setAiResult(json.aiResult);
-      sessionStorage.setItem("aiResult", JSON.stringify(json.aiResult));
+    const json = await res.json();
+    setAiResult(json.aiResult);
+    sessionStorage.setItem("aiResult", JSON.stringify(json.aiResult));
 
-      if (json.aiResult?.title) {
-        sessionStorage.setItem("previousActivity", json.aiResult.title);
-      }
-    } finally {
-      setLoading(false);
+    if (json.aiResult?.title) {
+      sessionStorage.setItem("previousActivity", json.aiResult.title);
     }
+
+    setLoading(false);
   }
 
   if (loading) {
     return (
       <div style={styles.container}>
-        <div style={styles.card}>Generating activity...</div>
+        <div style={styles.card}>Generating...</div>
       </div>
     );
   }
@@ -116,9 +98,8 @@ export default function ResultsClient() {
     return (
       <div style={styles.container}>
         <div style={styles.card}>
-          <h2>Edit Preferences</h2>
           <EditForm
-            initial={sessionData || {}}
+            initial={sessionData}
             onSave={(data) => {
               sessionStorage.setItem("activityData", JSON.stringify(data));
               setSessionData(data);
@@ -132,36 +113,22 @@ export default function ResultsClient() {
     );
   }
 
-  if (!aiResult) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.card}>
-          <h1>No activity found</h1>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        <h1>{aiResult.title}</h1>
-        <p style={styles.description}>{aiResult.short}</p>
+        <h1>{aiResult?.title}</h1>
+        <p>{aiResult?.short}</p>
+        <p>{aiResult?.long}</p>
 
-        {showLong ? (
-          <div style={styles.longDescription}>{aiResult.long}</div>
-        ) : (
-          <button style={styles.buttonSecondary} onClick={() => setShowLong(true)}>
-            Read more
+        <div style={{ marginTop: 20 }}>
+          <button style={styles.buttonPrimary} onClick={() => fetchAi(sessionData)}>
+            Generate Again
           </button>
-        )}
-
-        <div style={styles.centerButtons}>
-          <button style={styles.buttonPrimary} onClick={() => fetchAi(sessionData || {})}>
-            Generate again
-          </button>
-          <button style={styles.buttonSecondary} onClick={() => setEditing(true)}>
-            Edit preferences
+          <button
+            style={{ ...styles.buttonSecondary, marginLeft: 12 }}
+            onClick={() => setEditing(true)}
+          >
+            Edit Preferences
           </button>
         </div>
       </div>
@@ -170,48 +137,74 @@ export default function ResultsClient() {
 }
 
 function EditForm({ initial, onSave, onCancel }) {
-  const [state, setState] = useState({
+  const [form, setForm] = useState({
     personality: initial.personality || "",
     locationPref: initial.locationPref || "",
     season: initial.season || "",
     ageCategory: initial.ageCategory || "",
     groupSize: initial.groupSize || "",
-    chaos: initial.chaos || "",
+    chaos: initial.chaos || "calm",
     cityType: initial.cityType || "",
     extraInfo: initial.extraInfo || "",
   });
 
-  function update(k, v) {
-    setState((s) => ({ ...s, [k]: v }));
+  function update(key, value) {
+    setForm((s) => ({ ...s, [key]: value }));
   }
+
+  const fields = {
+    personality: ["Extrovert", "Introvert"],
+    locationPref: ["Inside", "Outside", "Both"],
+    season: ["Spring", "Summer", "Autumn/Fall", "Winter"],
+    ageCategory: ["Kids", "Teenagers", "Adults", "Mixed"],
+    groupSize: ["Solo (1)", "2-4", "Group (5+)"],
+    chaos: ["Calm", "Little Spicy", "Crazy"],
+    cityType: ["City", "Town"],
+  };
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSave(state);
+        onSave(form);
       }}
-      style={{ display: "grid", gap: 12 }}
+      style={{ display: "grid", gap: 14 }}
     >
-      {Object.keys(state).map((key) => (
-        <input
+      {Object.entries(fields).map(([key, opts]) => (
+        <select
           key={key}
-          placeholder={key}
-          value={state[key]}
+          value={form[key]}
           onChange={(e) => update(key, e.target.value)}
-          style={{
-            padding: 12,
-            borderRadius: 12,
-            border: "1px solid #ddd",
-          }}
-        />
+          style={styles.input}
+        >
+          <option value="">Select {key}</option>
+          {opts.map((o) => (
+            <option
+              key={o}
+              value={o.toLowerCase().replace(/\s|\(|\)|\//g, "")}
+            >
+              {o}
+            </option>
+          ))}
+        </select>
       ))}
 
-      <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+      <textarea
+        placeholder="Extra notes"
+        value={form.extraInfo}
+        onChange={(e) => update("extraInfo", e.target.value)}
+        style={{ ...styles.input, minHeight: 80 }}
+      />
+
+      <div>
         <button type="submit" style={styles.buttonPrimary}>
           Save & Generate
         </button>
-        <button type="button" onClick={onCancel} style={styles.buttonSecondary}>
+        <button
+          type="button"
+          onClick={onCancel}
+          style={{ ...styles.buttonSecondary, marginLeft: 12 }}
+        >
           Cancel
         </button>
       </div>
