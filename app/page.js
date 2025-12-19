@@ -9,7 +9,7 @@ const DEFAULT_FORM = {
   season: "",
   ageCategory: "",
   groupSize: "",
-  chaos: "normal",
+  chaos: "Calm",
   cityType: "",
   extraInfo: "",
 };
@@ -228,7 +228,7 @@ export default function Home() {
                   season: ["Select...","Spring","Summer","Autumn/Fall","Winter"],
                   ageCategory: ["Select...","Kids","Teenagers","Adults","Mixed"],
                   groupSize: ["Select...","Solo (1)","2-4","Group (5+)"],
-                  chaos: ["Normal","Getting There","Crazy"],
+                  chaos: ["Calm","little Spicy","Crazy"],
                   cityType: ["Select...","City","Town"],
                 };
                 return (
