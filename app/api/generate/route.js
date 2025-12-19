@@ -10,44 +10,36 @@ export async function POST(req) {
       personality,
       locationPref,
       season,
-      minAge,
-      maxAge,
-      numPeople,
+      ageCategory,
+      groupSize,
+      chaos,
+      cityType,
       extraInfo,
-      country,
-      state,
-      city,
-
-      // 🔥 FIX: Your frontend sends ONE string, not an array.
-      // Convert it into an array so your repeat-prevention still works.
       previousActivity = ""
     } = body || {};
 
-    // Convert single string into array
+    // Repeat prevention (single title → array)
     const previousActivities =
       previousActivity && previousActivity !== "null"
         ? [previousActivity]
         : [];
 
-    // Build constraints list
+    // Build constraints dynamically (EMPTY = RANDOM)
     const constraints = [];
     if (personality) constraints.push(`personality: ${personality}`);
     if (locationPref) constraints.push(`inside/outside: ${locationPref}`);
     if (season) constraints.push(`season: ${season}`);
-    if (minAge) constraints.push(`minAge: ${minAge}`);
-    if (maxAge) constraints.push(`maxAge: ${maxAge}`);
-    if (numPeople) constraints.push(`numPeople: ${numPeople}`);
-    if (country) constraints.push(`country: ${country}`);
-    if (state) constraints.push(`state: ${state}`);
-    if (city) constraints.push(`city: ${city}`);
-    if (extraInfo) constraints.push(`extra: ${extraInfo}`);
+    if (ageCategory) constraints.push(`age category: ${ageCategory}`);
+    if (groupSize) constraints.push(`group size: ${groupSize}`);
+    if (chaos) constraints.push(`chaos level: ${chaos}`);
+    if (cityType) constraints.push(`location type: ${cityType}`);
+    if (extraInfo) constraints.push(`extra notes: ${extraInfo}`);
 
     const constraintText =
       constraints.length > 0
         ? `Constraints: ${constraints.join(", ")}.`
-        : "No constraints provided.";
+        : "No constraints provided. Generate a completely random activity.";
 
-    // Activity history
     const historyText =
       previousActivities.length > 0
         ? previousActivities.map((a) => `- ${a}`).join("\n")
@@ -55,38 +47,39 @@ export async function POST(req) {
 
     const randomSeed = Math.random().toString(36).slice(2);
 
-    // ------------------------------
-    // MAIN PROMPT (kept exactly like your style)
-    // ------------------------------
     const userPrompt = `
 You are Fun Bot 3000. Suggest ONE engaging, realistic, modern activity.
-Use the provided constraints to tailor the activity. If you are givin no info 
-generate a activity that is fun for all ages all places and doable for all
-types of people.
+If no constraints are provided, generate a universally fun, accessible activity.
 
 Randomizer seed: ${randomSeed}
 
 ======== DO NOT REPEAT ACTIVITIES =========
-The user already received these activities:
+Previously generated activities:
 ${historyText}
 
-You MUST NOT output anything similar to these previous titles or ideas.
-Always create a **NEW** activity that differs clearly.
+You MUST generate a clearly NEW idea.
 
-======== LOCATION RULE FIX =========
-The field "locationPref" may be:
-• inside → indoor-only ideas
-• outside → outdoor-only ideas
+======== LOCATION RULES =========
+• inside → indoor-only
+• outside → outdoor-only
 • both → must work indoors OR outdoors
 • "" → no restriction
 
 ======== AGE RULES =========
-• Ages 12–17: modern, trendy, social, challenges, aesthetic, gaming, dares.
-  Avoid childish or boring adult tasks.
-• Ages 18–30: creative, social, fitness, nightlife, adventure, food challenges.
-• Ages 31–55: balanced, relaxing, skill-building, hobby, outdoors.
-• Ages 56+: accessible, light, cozy, social.
-• Unknown -> universal modern fun.
+• kids → playful, simple, supervised
+• teenagers → trendy, social, challenges
+• adults → creative, social, skill-based
+• mixed → universal, flexible
+
+======== GROUP SIZE RULES =========
+• solo → independent activities
+• 2-4 → cooperative or competitive
+• group → scalable, social
+
+======== CHAOS RULES =========
+• calm → relaxing, low energy
+• littlespicy → energetic but safe
+• crazy → bold, high-energy, exciting
 
 ======== PERSONALITY RULES =========
 • introvert → calm, cozy, creative
@@ -94,12 +87,13 @@ The field "locationPref" may be:
 
 ======== SEASON RULES =========
 • winter → cozy, indoor, cold-friendly
-• summer → adventure, water, outdoor
+• summer → outdoor, water, adventure
 • fall → aesthetic, cozy, warm
-• spring → nature, bright, outdoors
+• spring → bright, nature-focused
 
-======== LOCATION DATA =========
-Country/state/city provided should influence realism.
+======== CITY TYPE RULES =========
+• city → urban-friendly, dense-space ideas
+• town → simple, accessible, low-density ideas
 
 ======== OUTPUT FORMAT =========
 Return ONLY strict JSON:
@@ -115,9 +109,6 @@ ${constraintText}
 No markdown. JSON only.
 `;
 
-    // ------------------------------
-    // CALL OPENAI
-    // ------------------------------
     const completion = await client.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [{ role: "user", content: userPrompt }],
@@ -130,19 +121,17 @@ No markdown. JSON only.
 
     let aiResult = { title: "", short: "", long: "", raw: text };
 
-    // Try parsing JSON
     try {
       const jsonStart = text.indexOf("{");
       const jsonText = jsonStart >= 0 ? text.slice(jsonStart) : text;
       aiResult = { ...aiResult, ...(JSON.parse(jsonText) || {}) };
-    } catch (err) {
-      // fallback
+    } catch {
       aiResult.long = text.trim();
       aiResult.short = aiResult.long.split(".")[0] || "";
     }
 
     return new Response(
-      JSON.stringify({ success: true, aiResult, userData: body }),
+      JSON.stringify({ success: true, aiResult }),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
   } catch (err) {
