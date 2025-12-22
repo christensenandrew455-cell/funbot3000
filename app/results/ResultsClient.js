@@ -49,165 +49,100 @@ const styles = {
     border: "1px solid #ddd",
     marginTop: 6,
   },
+  resultBox: {
+    background: "#f1f3f6",
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 16,
+    textAlign: "left",
+    wordBreak: "break-word",
+  },
 };
 
 export default function ResultsClient() {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [url, setUrl] = useState("");
   const [aiResult, setAiResult] = useState(null);
-  const [editing, setEditing] = useState(false);
-  const [sessionData, setSessionData] = useState(null);
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    const d = sessionStorage.getItem("activityData");
-    const a = sessionStorage.getItem("aiResult");
-    setSessionData(d ? JSON.parse(d) : {});
-    setAiResult(a ? JSON.parse(a) : null);
-    setLoading(false);
-  }, []);
-
-  async function fetchAi(data) {
-    setLoading(true);
-    const previousActivity = sessionStorage.getItem("previousActivity") || "";
-
-    const res = await fetch("/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...data, previousActivity }),
-    });
-
-    const json = await res.json();
-    setAiResult(json.aiResult);
-    sessionStorage.setItem("aiResult", JSON.stringify(json.aiResult));
-
-    if (json.aiResult?.title) {
-      sessionStorage.setItem("previousActivity", json.aiResult.title);
+  async function fetchAi(submitUrl) {
+    if (!submitUrl) {
+      setError("Please enter a URL");
+      return;
     }
 
-    setLoading(false);
-  }
+    setLoading(true);
+    setError("");
+    setAiResult(null);
 
-  if (loading) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.card}>Generating...</div>
-      </div>
-    );
-  }
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: submitUrl }),
+      });
 
-  if (editing) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.card}>
-          <EditForm
-            initial={sessionData}
-            onSave={(data) => {
-              sessionStorage.setItem("activityData", JSON.stringify(data));
-              setSessionData(data);
-              setEditing(false);
-              fetchAi(data);
-            }}
-            onCancel={() => setEditing(false)}
-          />
-        </div>
-      </div>
-    );
+      if (!res.ok) throw new Error("API request failed");
+
+      const data = await res.json();
+      setAiResult(data.aiResult);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to generate review. Try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        <h1>{aiResult?.title}</h1>
-        <p>{aiResult?.short}</p>
-        <p>{aiResult?.long}</p>
-
-        <div style={{ marginTop: 20 }}>
-          <button style={styles.buttonPrimary} onClick={() => fetchAi(sessionData)}>
-            Generate Again
-          </button>
+        <h1 style={{ marginBottom: 12 }}>Link Review AI</h1>
+        <input
+          type="url"
+          placeholder="Enter product or website URL"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          style={styles.input}
+        />
+        <div style={{ marginTop: 12 }}>
           <button
-            style={{ ...styles.buttonSecondary, marginLeft: 12 }}
-            onClick={() => setEditing(true)}
+            style={styles.buttonPrimary}
+            onClick={() => fetchAi(url)}
+            disabled={loading}
           >
-            Edit Preferences
+            {loading ? "Processing..." : "Generate Review"}
           </button>
         </div>
+
+        {error && <p style={{ color: "red", marginTop: 12 }}>{error}</p>}
+
+        {aiResult && (
+          <div style={styles.resultBox}>
+            <p>
+              <strong>Type:</strong> {aiResult.type}
+            </p>
+            <p>
+              <strong>Title:</strong> {aiResult.title || "N/A"}
+            </p>
+            <p>
+              <strong>Status:</strong>{" "}
+              {aiResult.status === "good" ? "Good 👍" : "Bad 👎"}
+            </p>
+            <p>
+              <strong>Review:</strong> {aiResult.review}
+            </p>
+            {aiResult.status === "bad" && aiResult.alternative && (
+              <p>
+                <strong>Alternative:</strong>{" "}
+                <a href={aiResult.alternative} target="_blank" rel="noreferrer">
+                  {aiResult.alternative}
+                </a>
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </div>
-  );
-}
-
-function EditForm({ initial, onSave, onCancel }) {
-  const [form, setForm] = useState({
-    personality: initial.personality || "",
-    locationPref: initial.locationPref || "",
-    season: initial.season || "",
-    ageCategory: initial.ageCategory || "",
-    groupSize: initial.groupSize || "",
-    chaos: initial.chaos || "calm",
-    cityType: initial.cityType || "",
-    extraInfo: initial.extraInfo || "",
-  });
-
-  function update(key, value) {
-    setForm((s) => ({ ...s, [key]: value }));
-  }
-
-  const fields = {
-    personality: ["Extrovert", "Introvert"],
-    locationPref: ["Inside", "Outside", "Both"],
-    season: ["Spring", "Summer", "Autumn/Fall", "Winter"],
-    ageCategory: ["Kids", "Teenagers", "Adults", "Mixed"],
-    groupSize: ["Solo (1)", "2-4", "Group (5+)"],
-    chaos: ["Calm", "Little Spicy", "Crazy"],
-    cityType: ["City", "Town"],
-  };
-
-  return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSave(form);
-      }}
-      style={{ display: "grid", gap: 14 }}
-    >
-      {Object.entries(fields).map(([key, opts]) => (
-        <select
-          key={key}
-          value={form[key]}
-          onChange={(e) => update(key, e.target.value)}
-          style={styles.input}
-        >
-          <option value="">Select {key}</option>
-          {opts.map((o) => (
-            <option
-              key={o}
-              value={o.toLowerCase().replace(/\s|\(|\)|\//g, "")}
-            >
-              {o}
-            </option>
-          ))}
-        </select>
-      ))}
-
-      <textarea
-        placeholder="Extra notes"
-        value={form.extraInfo}
-        onChange={(e) => update("extraInfo", e.target.value)}
-        style={{ ...styles.input, minHeight: 80 }}
-      />
-
-      <div>
-        <button type="submit" style={styles.buttonPrimary}>
-          Save & Generate
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          style={{ ...styles.buttonSecondary, marginLeft: 12 }}
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
   );
 }
