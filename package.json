@@ -8,10 +8,10 @@
     "start": "next start"
   },
   "dependencies": {
-    "next": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "openai": "latest",
-    "puppeteer": "latest"
+    "next": "14.2.5",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "openai": "^4.40.0",
+    "jsdom": "^24.0.0"
   }
 }
