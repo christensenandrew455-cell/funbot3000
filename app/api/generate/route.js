@@ -1,7 +1,11 @@
+export const runtime = "nodejs";
+
 import { OpenAI } from "openai";
 import puppeteer from "puppeteer";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export async function POST(req) {
   try {
@@ -20,14 +24,19 @@ export async function POST(req) {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
     );
 
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+    await page.goto(url, {
+      waitUntil: "networkidle2",
+      timeout: 30000,
+    });
 
     const extracted = await page.evaluate(() => {
       const title = document.title || "";
 
-      const textBlocks = Array.from(document.querySelectorAll("body *"))
+      const textBlocks = Array.from(
+        document.querySelectorAll("p, li, article, section, div")
+      )
         .map(el => el.innerText?.trim())
-        .filter(t => t && t.length > 40)
+        .filter(t => t && t.length > 60)
         .slice(0, 120);
 
       return { title, textBlocks };
@@ -50,21 +59,20 @@ You are a professional fraud and credibility analyst.
 Type: ${type}
 URL: ${url}
 Title: ${extracted.title}
-Text sample count: ${textCount}
+Text blocks: ${textCount}
 Duplicate blocks: ${duplicateCount}
 
-Content:
+CONTENT:
 ${extracted.textBlocks.join("\n---\n")}
 
-Instructions:
-- Decide if this is trustworthy or not
-- Penalize low content volume
-- Penalize duplicate or templated text
-- Detect AI-written or fake review patterns
-- Rate as "good" or "bad"
-- If bad, provide ONE alternative link
-- Respond ONLY in valid JSON:
+RULES:
+- Penalize low content
+- Penalize repeated or templated language
+- Detect fake or AI-written reviews
+- Consider seller/site credibility
+- Output ONLY valid JSON
 
+FORMAT:
 {
   "status": "good" | "bad",
   "review": "string",
@@ -73,7 +81,7 @@ Instructions:
 `;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-4.1-mini",
       messages: [{ role: "user", content: prompt }],
     });
 
