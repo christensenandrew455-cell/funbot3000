@@ -18,38 +18,35 @@ function isValidUrl(url) {
 
 export async function POST(req) {
   try {
-    const { url } = await req.json();
-
-    if (!url || !isValidUrl(url)) {
-      return new Response(
-        JSON.stringify({ error: "Invalid URL" }),
-        { status: 400 }
-      );
+    let { url } = await req.json();
+    if (!url) {
+      return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
     }
 
-    /* ---------- Fetch HTML ---------- */
+    // Normalize URL
+    if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+
+    if (!isValidUrl(url)) {
+      return new Response(JSON.stringify({ error: "Invalid URL" }), { status: 400 });
+    }
+
+    // Fetch page content
     const res = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120",
-      },
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120" },
       redirect: "follow",
     });
-
-    if (!res.ok) {
-      throw new Error("Failed to fetch page");
-    }
+    if (!res.ok) throw new Error("Failed to fetch page");
 
     const html = await res.text();
 
-    /* ---------- Parse HTML ---------- */
+    // Parse HTML
     const dom = new JSDOM(html);
     const document = dom.window.document;
 
     const title = document.title || "";
 
     const textBlocks = Array.from(
-      document.querySelectorAll("main p, article p, section p")
+      document.querySelectorAll("main p, article p, section p, div, span")
     )
       .map(el => el.textContent?.trim())
       .filter(t => t && t.length > 80)
@@ -57,16 +54,40 @@ export async function POST(req) {
 
     const textCount = textBlocks.length;
     const duplicateCount =
-      textCount -
-      new Set(textBlocks.map(t => t.toLowerCase())).size;
+      textCount - new Set(textBlocks.map(t => t.toLowerCase())).size;
 
     const type = /amazon|walmart|bestbuy|shopify|product/i.test(url)
       ? "product"
       : "website";
 
-    /* ---------- Prompt ---------- */
+    // Rules for AI prompt
+    const rules =
+      type === "product"
+        ? `
+- Check seller/site credibility carefully
+- Do NOT penalize repeated template blocks typical on product pages
+- Detect fake or AI-written reviews only
+- Use AI knowledge to evaluate the brand/product
+- Combine scraped content with AI knowledge
+- Output ONLY JSON
+- NO markdown or commentary
+`
+        : `
+- Penalize low content
+- Penalize repeated or templated language
+- Detect fake or AI-written reviews
+- Consider seller/site credibility
+- Combine scraped content with AI knowledge
+- Output ONLY JSON
+- NO markdown or commentary
+`;
+
+    // Prompt for AI
     const prompt = `
 You are a professional fraud and credibility analyst.
+Use BOTH the following sources:
+1) The website content extracted from the URL
+2) Your own knowledge about the site or product
 
 Type: ${type}
 URL: ${url}
@@ -78,13 +99,7 @@ CONTENT:
 ${textBlocks.join("\n---\n")}
 
 RULES:
-- Penalize low content
-- Penalize repeated or templated language
-- Detect fake or AI-written reviews
-- Consider seller/site credibility
-- Output ONLY raw JSON
-- NO markdown
-- NO commentary
+${rules}
 
 FORMAT:
 {
@@ -94,7 +109,7 @@ FORMAT:
 }
 `;
 
-    /* ---------- OpenAI ---------- */
+    // Call OpenAI
     const response = await openai.responses.create({
       model: "gpt-4.1-mini",
       input: prompt,
@@ -125,9 +140,6 @@ FORMAT:
     );
   } catch (err) {
     console.error("API error:", err);
-    return new Response(
-      JSON.stringify({ error: "Server error" }),
-      { status: 500 }
-    );
+    return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
   }
 }
