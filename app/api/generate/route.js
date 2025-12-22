@@ -1,197 +1,74 @@
-import OpenAI from "openai";
+import { OpenAI } from "openai";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-export async function POST(req) {
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: "Missing URL" });
+
+  let type = "website";
+  if (/amazon\.com|shopify|walmart\.com|bestbuy\.com/i.test(url)) type = "product";
+
+  // Fetch content
+  let content;
   try {
-    const body = await req.json();
+    const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+    const html = await response.text();
 
-    const {
-      personality,
-      locationPref,
-      season,
-      ageCategory,
-      groupSize,
-      chaos,
-      cityType,
-      extraInfo,
-      previousActivity = "",
-    } = body || {};
+    if (type === "product") {
+      // Simplest parsing: get title + description (could improve with site-specific logic)
+      const titleMatch = html.match(/<title>(.*?)<\/title>/i);
+      const descMatch = html.match(/<meta name="description" content="(.*?)"/i);
+      content = {
+        title: titleMatch ? titleMatch[1] : "",
+        description: descMatch ? descMatch[1] : "",
+        url,
+      };
+    } else {
+      // Generic website summary
+      const titleMatch = html.match(/<title>(.*?)<\/title>/i);
+      content = { title: titleMatch ? titleMatch[1] : "", url };
+    }
+  } catch (err) {
+    console.error("Fetch error:", err);
+    return res.status(500).json({ error: "Failed to fetch URL" });
+  }
 
-    const previousActivities =
-      previousActivity && previousActivity !== "null"
-        ? [previousActivity]
-        : [];
-
-    const constraints = [];
-    if (personality) constraints.push(`personality=${personality}`);
-    if (locationPref) constraints.push(`locationPref=${locationPref}`);
-    if (season) constraints.push(`season=${season}`);
-    if (ageCategory) constraints.push(`ageCategory=${ageCategory}`);
-    if (groupSize) constraints.push(`groupSize=${groupSize}`);
-    if (chaos) constraints.push(`chaos=${chaos}`);
-    if (cityType) constraints.push(`cityType=${cityType}`);
-    if (extraInfo) constraints.push(`extraInfo=${extraInfo}`);
-
-    const constraintText =
-      constraints.length > 0
-        ? constraints.join(", ")
-        : "none (fully random)";
-
-    const historyText =
-      previousActivities.length > 0
-        ? previousActivities.map((a) => `- ${a}`).join("\n")
-        : "none";
-
-    const randomSeed = Math.random().toString(36).slice(2);
-
+  // AI review
+  try {
     const prompt = `
-You are Fun Bot 3000.
-Generate EXACTLY ONE activity idea.
+You are an expert reviewer.
+Type: ${type}
+Content: ${JSON.stringify(content)}
 
-Random seed: ${randomSeed}
-
-================= PREVIOUS ACTIVITIES =================
-${historyText}
-You MUST NOT repeat or closely resemble these.
-
-================= HARD RULE ENFORCEMENT =================
-If ANY rule below is violated, the activity is INVALID and must be regenerated internally before responding.
-
------ PERSONALITY -----
-introvert:
-- MUST be calm, quiet, low-stimulation
-- MUST be solo or with close friends only
-- MUST NOT involve crowds, competition, performance, or strangers
-
-extrovert:
-- MUST involve other people OR public interaction
-- MUST be social, collaborative, competitive, or expressive
-- MUST NOT be solo
-- MUST NOT be quiet hobbies
-- MUST NOT include DIY, crafts, journaling, terrariums, or personal projects
-
------ CHAOS LEVEL -----
-calm:
-- relaxing, low energy
-- no adrenaline, no competition
-
-littlespicy:
-- energetic but safe
-- mild competition or movement allowed
-
-crazy:
-- high energy, bold, exciting
-- strong movement, challenge, or intensity required
-
------ GROUP SIZE -----
-solo:
-- must work completely alone
-
-2-4:
-- must require interaction between a few people
-
-group:
-- must scale to 5+ people
-- social or coordinated by nature
-
------ AGE CATEGORY -----
-kids:
-- simple, playful, supervised
-- no complex rules, no risk
-
-teenagers:
-- trendy, social, challenge-based
-- no childish activities
-
-adults:
-- mature, social, creative, or skill-based
-- no childish activities
-
-mixed:
-- universally accessible
-- flexible and inclusive
-
------ LOCATION (INSIDE / OUTSIDE) -----
-inside:
-- indoor-only
-
-outside:
-- outdoor-only
-
-both:
-- must work indoors OR outdoors
-
------ SEASON -----
-winter:
-- cold-friendly or indoor
-
-summer:
-- outdoor, water, or high-energy
-
-fall:
-- cozy, aesthetic, moderate energy
-
-spring:
-- fresh, bright, nature-friendly
-
------ CITY TYPE -----
-city:
-- dense-space friendly
-- no large open land assumptions
-
-town:
-- accessible, lower density
-- no urban-only infrastructure
-
-================= OUTPUT RULES =================
-Return ONLY valid JSON.
-No markdown.
-No commentary.
-No explanations.
-
-{
-  "title": "3-6 word title",
-  "short": "10-20 word summary",
-  "long": "2-4 sentence description"
-}
-
-================= USER CONSTRAINTS =================
-${constraintText}
+Instructions:
+- Rate it "good" or "bad"
+- Give a short review
+- If bad, suggest one alternative link
+- Respond in JSON: { status: "good"|"bad", review: "...", alternative: "..." }
 `;
 
-    const completion = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
       messages: [{ role: "user", content: prompt }],
-      max_tokens: 400,
-      temperature: 0.95,
     });
 
-    const text = completion.choices?.[0]?.message?.content ?? "";
-
-    let aiResult = { title: "", short: "", long: "", raw: text };
-
+    const aiResponse = completion.choices[0].message.content;
+    let json;
     try {
-      const jsonStart = text.indexOf("{");
-      const jsonText = jsonStart >= 0 ? text.slice(jsonStart) : text;
-      aiResult = { ...aiResult, ...JSON.parse(jsonText) };
+      json = JSON.parse(aiResponse);
     } catch {
-      aiResult.long = text.trim();
-      aiResult.short = aiResult.long.split(".")[0] || "";
+      // fallback: treat entire response as review
+      json = { status: "bad", review: aiResponse, alternative: "" };
     }
 
-    return new Response(
-      JSON.stringify({ success: true, aiResult }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
-    );
+    return res.status(200).json({ aiResult: json });
   } catch (err) {
-    return new Response(
-      JSON.stringify({
-        success: false,
-        aiResult: { title: "", short: "", long: "" },
-        error: err?.message,
-      }),
-      { status: 500 }
-    );
+    console.error("AI error:", err);
+    return res.status(500).json({ error: "AI review failed" });
   }
 }
