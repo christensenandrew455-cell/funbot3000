@@ -2,44 +2,31 @@ import { OpenAI } from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  const { url } = req.body;
-  if (!url) return res.status(400).json({ error: "Missing URL" });
-
-  let type = "website";
-  if (/amazon\.com|shopify|walmart\.com|bestbuy\.com/i.test(url)) type = "product";
-
-  // Fetch content
-  let content;
+export async function POST(req) {
   try {
-    const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-    const html = await response.text();
+    const { url } = await req.json();
+    if (!url) return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
 
-    if (type === "product") {
-      // Simplest parsing: get title + description (could improve with site-specific logic)
+    let type = "website";
+    if (/amazon\.com|shopify|walmart\.com|bestbuy\.com/i.test(url)) type = "product";
+
+    let content;
+    try {
+      const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+      const html = await response.text();
+
       const titleMatch = html.match(/<title>(.*?)<\/title>/i);
       const descMatch = html.match(/<meta name="description" content="(.*?)"/i);
-      content = {
-        title: titleMatch ? titleMatch[1] : "",
-        description: descMatch ? descMatch[1] : "",
-        url,
-      };
-    } else {
-      // Generic website summary
-      const titleMatch = html.match(/<title>(.*?)<\/title>/i);
-      content = { title: titleMatch ? titleMatch[1] : "", url };
-    }
-  } catch (err) {
-    console.error("Fetch error:", err);
-    return res.status(500).json({ error: "Failed to fetch URL" });
-  }
 
-  // AI review
-  try {
+      content =
+        type === "product"
+          ? { title: titleMatch?.[1] || "", description: descMatch?.[1] || "", url }
+          : { title: titleMatch?.[1] || "", url };
+    } catch (err) {
+      console.error("Fetch error:", err);
+      return new Response(JSON.stringify({ error: "Failed to fetch URL" }), { status: 500 });
+    }
+
     const prompt = `
 You are an expert reviewer.
 Type: ${type}
@@ -57,18 +44,17 @@ Instructions:
       messages: [{ role: "user", content: prompt }],
     });
 
-    const aiResponse = completion.choices[0].message.content;
-    let json;
+    let aiResult;
     try {
-      json = JSON.parse(aiResponse);
+      aiResult = JSON.parse(completion.choices[0].message.content);
     } catch {
-      // fallback: treat entire response as review
-      json = { status: "bad", review: aiResponse, alternative: "" };
+      aiResult = { status: "bad", review: completion.choices[0].message.content, alternative: "" };
     }
 
-    return res.status(200).json({ aiResult: json });
+    return new Response(JSON.stringify({ aiResult }), { status: 200 });
   } catch (err) {
-    console.error("AI error:", err);
-    return res.status(500).json({ error: "AI review failed" });
+    console.error("API error:", err);
+    return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
   }
 }
+
