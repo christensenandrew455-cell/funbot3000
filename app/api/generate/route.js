@@ -1,4 +1,6 @@
+// app/api/generate/route.js
 import { OpenAI } from "openai";
+import puppeteer from "puppeteer";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -7,36 +9,66 @@ export async function POST(req) {
     const { url } = await req.json();
     if (!url) return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
 
-    let type = "website";
-    if (/amazon\.com|shopify|walmart\.com|bestbuy\.com/i.test(url)) type = "product";
+    // Launch Puppeteer
+    const browser = await puppeteer.launch({ headless: true });
+    const page = await browser.newPage();
+    await page.goto(url, { waitUntil: "networkidle2" });
 
-    let content;
-    try {
-      const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-      const html = await response.text();
+    // Extract page title
+    const title = await page.title();
 
-      const titleMatch = html.match(/<title>(.*?)<\/title>/i);
-      const descMatch = html.match(/<meta name="description" content="(.*?)"/i);
+    // Try to extract reviews generically
+    const reviews = await page.evaluate(() => {
+      const blocks = [];
+      // Look for common review patterns
+      const reviewElements = Array.from(document.querySelectorAll(
+        '[class*="review"], [id*="review"], [data-test*="review"]'
+      ));
+      for (let el of reviewElements.slice(0, 50)) { // limit to first 50
+        const text = el.innerText.trim();
+        if (text) blocks.push(text);
+      }
+      return blocks;
+    });
 
-      content =
-        type === "product"
-          ? { title: titleMatch?.[1] || "", description: descMatch?.[1] || "", url }
-          : { title: titleMatch?.[1] || "", url };
-    } catch (err) {
-      console.error("Fetch error:", err);
-      return new Response(JSON.stringify({ error: "Failed to fetch URL" }), { status: 500 });
-    }
+    // Compute simple heuristics
+    const reviewCount = reviews.length;
+    const avgLength = reviews.reduce((a, r) => a + r.length, 0) / (reviewCount || 1);
+    const duplicateRatio =
+      reviews.length > 0
+        ? reviews.length - new Set(reviews.map(r => r.toLowerCase())).size
+        : 0;
 
+    await browser.close();
+
+    // Prepare data for AI
+    const content = {
+      title,
+      url,
+      reviews,
+      reviewCount,
+      avgLength,
+      duplicateRatio,
+    };
+
+    // Determine type (product vs website)
+    const type = /amazon\.com|shopify|walmart\.com|bestbuy\.com/i.test(url)
+      ? "product"
+      : "website";
+
+    // AI review prompt
     const prompt = `
 You are an expert reviewer.
 Type: ${type}
 Content: ${JSON.stringify(content)}
 
 Instructions:
-- Rate it "good" or "bad"
-- Give a short review
-- If bad, suggest one alternative link
-- Respond in JSON: { status: "good"|"bad", review: "...", alternative: "..." }
+- Rate the product or site as "good" or "bad"
+- Detect if reviews are suspicious or AI-generated
+- Factor in review count, duplicates, and overall credibility
+- If bad, suggest an alternative link
+- Respond strictly in JSON: 
+{ "status": "good"|"bad", "review": "...", "alternative": "..." }
 `;
 
     const completion = await openai.chat.completions.create({
@@ -51,10 +83,9 @@ Instructions:
       aiResult = { status: "bad", review: completion.choices[0].message.content, alternative: "" };
     }
 
-    return new Response(JSON.stringify({ aiResult }), { status: 200 });
+    return new Response(JSON.stringify({ aiResult, type }), { status: 200 });
   } catch (err) {
     console.error("API error:", err);
     return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
   }
 }
-
