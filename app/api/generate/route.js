@@ -25,18 +25,15 @@ export async function POST(req) {
 
     let html;
     try {
-      const res = await fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0" },
-        redirect: "follow",
-      });
+      const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" }, redirect: "follow" });
       if (!res.ok) return new Response(JSON.stringify({ error: `Failed to fetch: ${res.status}` }), { status: 400 });
       html = await res.text();
     } catch {
       return new Response(JSON.stringify({ error: "Unable to fetch page" }), { status: 400 });
     }
 
-    // Parse HTML with JSDOM, ignore all styles
-    const dom = new JSDOM(html, { runScripts: "dangerously", resources: "usable" });
+    // Parse HTML without running scripts
+    const dom = new JSDOM(html);
     const document = dom.window.document;
     const title = document.title || "";
 
@@ -51,11 +48,11 @@ export async function POST(req) {
 
     const type = /amazon|walmart|bestbuy|shopify|product/i.test(url) ? "product" : "website";
 
-    // Analyze in chunks
     const segments = chunkArray(textBlocks, 5);
     const segmentResults = [];
     for (const segment of segments) {
       const prompt = `Analyze this content for credibility and risk:\n\n${segment.join("\n---\n")}\n\nRespond ONLY in JSON:\n{ "status": "good" | "bad", "review": "string", "alternative": "string" }`;
+
       const completion = await openai.chat.completions.create({
         model: "gpt-4.1-mini",
         messages: [{ role: "user", content: prompt }],
@@ -68,7 +65,6 @@ export async function POST(req) {
       }
     }
 
-    // Merge segments
     const mergePrompt = `Combine these analyses into ONE final JSON:\n${segmentResults.map((r, i) => `Segment ${i + 1}: ${JSON.stringify(r)}`).join("\n")}\nRespond ONLY in JSON:\n{ "status": "good" | "bad", "review": "string", "alternative": "string" }`;
 
     const finalCompletion = await openai.chat.completions.create({
@@ -90,4 +86,3 @@ export async function POST(req) {
     return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
   }
 }
-
