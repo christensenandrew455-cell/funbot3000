@@ -2,6 +2,12 @@
 
 import { useState } from "react";
 
+function normalizeUrl(input) {
+  if (!input) return "";
+  if (/^https?:\/\//i.test(input)) return input;
+  return `https://${input}`;
+}
+
 export default function Home() {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -13,8 +19,10 @@ export default function Home() {
     setError("");
     setResult(null);
 
-    if (!url) {
-      setError("Please enter a valid URL.");
+    const normalizedUrl = normalizeUrl(url);
+
+    if (!normalizedUrl) {
+      setError("Please enter a valid website.");
       return;
     }
 
@@ -24,12 +32,10 @@ export default function Home() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url: normalizedUrl }),
       });
 
-      if (!res.ok) {
-        throw new Error("API request failed");
-      }
+      if (!res.ok) throw new Error("API request failed");
 
       const data = await res.json();
       setResult(data.aiResult);
@@ -45,30 +51,59 @@ export default function Home() {
     <div style={styles.container}>
       <div style={styles.card}>
         <h1 style={styles.title}>Link → AI</h1>
-        <p style={styles.subtitle}>
-          Paste a link from any website. The AI will handle the rest.
-        </p>
 
-        <form onSubmit={handleSubmit} style={styles.form}>
-          <input
-            type="url"
-            placeholder="https://example.com"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            style={styles.input}
-          />
-
-          <button type="submit" style={styles.button} disabled={loading}>
-            {loading ? "Processing..." : "Send to AI"}
-          </button>
-        </form>
+        {!result && (
+          <form onSubmit={handleSubmit} style={styles.form}>
+            <input
+              type="text"
+              placeholder="example.com"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              style={styles.input}
+            />
+            <button type="submit" style={styles.button} disabled={loading}>
+              {loading ? "Processing..." : "Analyze Website"}
+            </button>
+          </form>
+        )}
 
         {error && <p style={styles.error}>{error}</p>}
 
         {result && (
-          <pre style={styles.result}>
-            {JSON.stringify(result, null, 2)}
-          </pre>
+          <>
+            <div style={styles.verdict(result.status)}>
+              {result.status === "good" ? "GOOD" : "BAD"}
+            </div>
+
+            <div style={styles.section}>
+              <h3>Summary</h3>
+              <p>{result.review}</p>
+            </div>
+
+            <div style={styles.section}>
+              <h3>Page Title</h3>
+              <p>{result.title || "No title detected"}</p>
+            </div>
+
+            <div style={styles.section}>
+              <h3>Detected Type</h3>
+              <p>{result.type}</p>
+            </div>
+
+            {/* New search BELOW results */}
+            <form onSubmit={handleSubmit} style={{ marginTop: 32 }}>
+              <input
+                type="text"
+                placeholder="Check another site..."
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                style={styles.input}
+              />
+              <button type="submit" style={styles.button} disabled={loading}>
+                {loading ? "Processing..." : "Analyze Another"}
+              </button>
+            </form>
+          </>
         )}
       </div>
     </div>
@@ -96,11 +131,6 @@ const styles = {
   title: {
     fontSize: 32,
     fontWeight: 800,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "#555",
     marginBottom: 24,
   },
   form: {
@@ -128,13 +158,14 @@ const styles = {
     color: "red",
     marginTop: 12,
   },
-  result: {
-    marginTop: 20,
-    padding: 16,
-    background: "#f1f3f6",
-    borderRadius: 10,
+  verdict: (status) => ({
+    fontSize: 36,
+    fontWeight: 900,
+    color: status === "good" ? "#16a34a" : "#dc2626",
+    marginBottom: 24,
+  }),
+  section: {
     textAlign: "left",
-    fontSize: 13,
-    overflowX: "auto",
+    marginBottom: 16,
   },
 };
