@@ -1,76 +1,90 @@
 export const runtime = "nodejs";
 
 import { OpenAI } from "openai";
-import puppeteer from "puppeteer";
+import { JSDOM } from "jsdom";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+function isValidUrl(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(req) {
   try {
     const { url } = await req.json();
-    if (!url) {
-      return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
+
+    if (!url || !isValidUrl(url)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid URL" }),
+        { status: 400 }
+      );
     }
 
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    /* ---------- Fetch HTML ---------- */
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120",
+      },
+      redirect: "follow",
     });
 
-    const page = await browser.newPage();
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
-    );
+    if (!res.ok) {
+      throw new Error("Failed to fetch page");
+    }
 
-    await page.goto(url, {
-      waitUntil: "networkidle2",
-      timeout: 30000,
-    });
+    const html = await res.text();
 
-    const extracted = await page.evaluate(() => {
-      const title = document.title || "";
+    /* ---------- Parse HTML ---------- */
+    const dom = new JSDOM(html);
+    const document = dom.window.document;
 
-      const textBlocks = Array.from(
-        document.querySelectorAll("p, li, article, section, div")
-      )
-        .map(el => el.innerText?.trim())
-        .filter(t => t && t.length > 60)
-        .slice(0, 120);
+    const title = document.title || "";
 
-      return { title, textBlocks };
-    });
+    const textBlocks = Array.from(
+      document.querySelectorAll("main p, article p, section p")
+    )
+      .map(el => el.textContent?.trim())
+      .filter(t => t && t.length > 80)
+      .slice(0, 120);
 
-    await browser.close();
-
-    const textCount = extracted.textBlocks.length;
+    const textCount = textBlocks.length;
     const duplicateCount =
       textCount -
-      new Set(extracted.textBlocks.map(t => t.toLowerCase())).size;
+      new Set(textBlocks.map(t => t.toLowerCase())).size;
 
     const type = /amazon|walmart|bestbuy|shopify|product/i.test(url)
       ? "product"
       : "website";
 
+    /* ---------- Prompt ---------- */
     const prompt = `
 You are a professional fraud and credibility analyst.
 
 Type: ${type}
 URL: ${url}
-Title: ${extracted.title}
+Title: ${title}
 Text blocks: ${textCount}
 Duplicate blocks: ${duplicateCount}
 
 CONTENT:
-${extracted.textBlocks.join("\n---\n")}
+${textBlocks.join("\n---\n")}
 
 RULES:
 - Penalize low content
 - Penalize repeated or templated language
 - Detect fake or AI-written reviews
 - Consider seller/site credibility
-- Output ONLY valid JSON
+- Output ONLY raw JSON
+- NO markdown
+- NO commentary
 
 FORMAT:
 {
@@ -80,18 +94,21 @@ FORMAT:
 }
 `;
 
-    const completion = await openai.chat.completions.create({
+    /* ---------- OpenAI ---------- */
+    const response = await openai.responses.create({
       model: "gpt-4.1-mini",
-      messages: [{ role: "user", content: prompt }],
+      input: prompt,
     });
+
+    const output = response.output_text;
 
     let aiResult;
     try {
-      aiResult = JSON.parse(completion.choices[0].message.content);
+      aiResult = JSON.parse(output);
     } catch {
       aiResult = {
         status: "bad",
-        review: completion.choices[0].message.content,
+        review: output.slice(0, 1000),
         alternative: "",
       };
     }
@@ -101,13 +118,16 @@ FORMAT:
         aiResult: {
           ...aiResult,
           type,
-          title: extracted.title,
+          title,
         },
       }),
       { status: 200 }
     );
   } catch (err) {
     console.error("API error:", err);
-    return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
+    return new Response(
+      JSON.stringify({ error: "Server error" }),
+      { status: 500 }
+    );
   }
 }
