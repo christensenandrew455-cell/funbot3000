@@ -32,7 +32,7 @@ export default function Home() {
       }
 
       const data = await res.json();
-      setResult(data);
+      setResult(data.aiResult);
     } catch (err) {
       console.error(err);
       setError("Something went wrong. Try again.");
