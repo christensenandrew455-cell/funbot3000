@@ -3,14 +3,14 @@
 import { useState } from "react";
 
 export default function ResultsClient() {
-  const [loading, setLoading] = useState(false);
   const [url, setUrl] = useState("");
   const [aiResult, setAiResult] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   async function fetchAi() {
     if (!url) {
-      setError("Please enter a URL");
+      setError("Please enter a product link.");
       return;
     }
 
@@ -26,7 +26,6 @@ export default function ResultsClient() {
       });
 
       if (!res.ok) throw new Error("API request failed");
-
       const data = await res.json();
       setAiResult(data.aiResult);
     } catch (err) {
@@ -39,11 +38,11 @@ export default function ResultsClient() {
 
   return (
     <div style={{ padding: 24 }}>
-      <h1>Link Review AI</h1>
+      <h1>Product Link Review AI</h1>
 
       <input
         type="url"
-        placeholder="https://example.com"
+        placeholder="https://example-product.com"
         value={url}
         onChange={(e) => setUrl(e.target.value)}
         style={{ padding: 12, width: "100%", marginBottom: 12 }}
@@ -57,11 +56,11 @@ export default function ResultsClient() {
 
       {aiResult && (
         <div style={{ marginTop: 20 }}>
-          <p><strong>Type:</strong> {aiResult.type}</p>
           <p><strong>Title:</strong> {aiResult.title}</p>
           <p><strong>Status:</strong> {aiResult.status}</p>
+          <p><strong>Seller Trust:</strong> {aiResult.sellerTrust}</p>
+          <p><strong>Confidence:</strong> {aiResult.confidence}</p>
           <p><strong>Review:</strong> {aiResult.review}</p>
-
           {aiResult.status === "bad" && aiResult.alternative && (
             <p>
               <strong>Alternative:</strong>{" "}
