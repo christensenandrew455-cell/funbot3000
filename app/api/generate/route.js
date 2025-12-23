@@ -39,11 +39,20 @@ export async function POST(req) {
 
     let html;
     try {
-      const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" }, redirect: "follow" });
-      if (!res.ok) return new Response(JSON.stringify({ error: `Failed to fetch: ${res.status}` }), { status: 400 });
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/117.0.0.0 Safari/537.36",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+        redirect: "follow",
+      });
+
+      if (!res.ok) {
+        return new Response(JSON.stringify({ error: `Failed to fetch page: ${res.status}` }), { status: 400 });
+      }
       html = await res.text();
-    } catch {
-      return new Response(JSON.stringify({ error: "Unable to fetch page" }), { status: 400 });
+    } catch (err) {
+      return new Response(JSON.stringify({ error: "Unable to fetch page: " + err.message }), { status: 400 });
     }
 
     html = html.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "");
@@ -51,7 +60,10 @@ export async function POST(req) {
     const document = dom.window.document;
     const title = document.title || "";
     const textBlocks = extractTextBlocks(document);
-    if (!textBlocks.length) return new Response(JSON.stringify({ error: "No readable content found" }), { status: 400 });
+
+    if (!textBlocks.length) {
+      return new Response(JSON.stringify({ error: "No readable content found on the page" }), { status: 400 });
+    }
 
     const prompt = `
 You are a professional e-commerce fraud analyst.
@@ -98,7 +110,7 @@ Respond ONLY in JSON with:
 
     return new Response(JSON.stringify({ aiResult: { ...aiResult, title } }), { status: 200 });
   } catch (err) {
-    console.error(err);
-    return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
+    console.error("Server error:", err);
+    return new Response(JSON.stringify({ error: "Server error: " + err.message }), { status: 500 });
   }
 }
