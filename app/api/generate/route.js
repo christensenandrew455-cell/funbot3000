@@ -2,8 +2,11 @@ export const runtime = "nodejs";
 
 import { OpenAI } from "openai";
 import whois from "whois-json";
+import { JSDOM } from "jsdom";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 function getDomain(url) {
   return new URL(url).hostname.replace(/^www\./, "");
@@ -23,17 +26,47 @@ async function getDomainAge(domain) {
   }
 }
 
+/**
+ * Extract readable page text for AI understanding
+ */
+async function extractPageText(url) {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (compatible; ProductAnalyzer/1.0)",
+      },
+    });
+
+    const html = await res.text();
+    const dom = new JSDOM(html);
+    const document = dom.window.document;
+
+    document
+      .querySelectorAll("script, style, noscript")
+      .forEach((el) => el.remove());
+
+    const text = document.body?.textContent || "";
+    return text.replace(/\s+/g, " ").slice(0, 8000);
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req) {
   try {
     const { url } = await req.json();
     if (!url) {
-      return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
+      return new Response(
+        JSON.stringify({ error: "Missing URL" }),
+        { status: 400 }
+      );
     }
 
     const domain = getDomain(url);
     const domainAgeDays = await getDomainAge(domain);
 
-    // Basic heuristics (expand later)
+    // --- WEBSITE HEURISTICS ---
     let websiteTrustScore = 50;
     const flags = [];
 
@@ -46,7 +79,45 @@ export async function POST(req) {
       }
     }
 
-    const prompt = `
+    // --- AI STEP #1: PAGE UNDERSTANDING ---
+    const pageText = await extractPageText(url);
+    let pageUnderstanding = null;
+
+    if (pageText) {
+      const pagePrompt = `
+You are a product page parser.
+
+Rules:
+- Do NOT guess
+- If information is missing, return null
+- Be conservative
+- Output JSON ONLY
+
+Webpage text:
+"""${pageText}"""
+
+Respond:
+{
+  "isProductPage": true | false,
+  "productTitle": "string | null",
+  "price": "string | null",
+  "seller": "string | null",
+  "productType": "string | null"
+}
+`;
+
+      const pageCompletion = await openai.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [{ role: "user", content: pagePrompt }],
+      });
+
+      pageUnderstanding = JSON.parse(
+        pageCompletion.choices[0].message.content
+      );
+    }
+
+    // --- AI STEP #2: SCAM ANALYSIS ---
+    const scamPrompt = `
 You are an e-commerce risk analyst.
 
 Given:
@@ -56,41 +127,52 @@ Given:
 - Website trust score: ${websiteTrustScore}/100
 - Flags: ${flags.join(", ") || "none"}
 
-Task:
-- Assess scam likelihood conservatively
-- Do NOT invent facts
-- Base conclusions on provided signals
-- Use probabilistic language
+Product understanding:
+- Product title: ${pageUnderstanding?.productTitle ?? "unknown"}
+- Product type: ${pageUnderstanding?.productType ?? "unknown"}
+- Seller: ${pageUnderstanding?.seller ?? "unknown"}
 
-Respond ONLY in JSON:
+Rules:
+- Do NOT invent facts
+- Be conservative
+- Use probabilistic language
+- Output JSON ONLY
+
+Respond:
 {
   "status": "good" | "bad",
   "review": "string",
   "sellerTrust": "high" | "medium" | "low",
   "confidence": "high" | "medium" | "low",
-  "alternative": "string"
+  "alternative": "string | null"
 }
 `;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
-      messages: [{ role: "user", content: prompt }],
+      messages: [{ role: "user", content: scamPrompt }],
     });
 
-    const aiResult = JSON.parse(completion.choices[0].message.content);
+    const aiResult = JSON.parse(
+      completion.choices[0].message.content
+    );
 
     return new Response(
       JSON.stringify({
         aiResult: {
           ...aiResult,
-          websiteTrustScore,
           domain,
+          websiteTrustScore,
+          pageUnderstanding,
         },
       }),
       { status: 200 }
     );
   } catch (err) {
     console.error(err);
-    return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
+    return new Response(
+      JSON.stringify({ error: "Server error" }),
+      { status: 500 }
+    );
   }
 }
