@@ -19,7 +19,8 @@ async function getDomainAge(domain) {
       data.creationDate || data.createdDate || data.registered;
     if (!created) return null;
     return Math.floor(
-      (Date.now() - new Date(created).getTime()) / (1000 * 60 * 60 * 24)
+      (Date.now() - new Date(created).getTime()) /
+        (1000 * 60 * 60 * 24)
     );
   } catch {
     return null;
@@ -27,7 +28,7 @@ async function getDomainAge(domain) {
 }
 
 /**
- * Extract readable page text for AI understanding
+ * Extract readable + structured page data for AI understanding
  */
 async function extractPageText(url) {
   try {
@@ -42,12 +43,52 @@ async function extractPageText(url) {
     const dom = new JSDOM(html);
     const document = dom.window.document;
 
+    const parts = [];
+
+    // ---- JSON-LD PRODUCT DATA (MOST IMPORTANT) ----
     document
-      .querySelectorAll("script, style, noscript")
+      .querySelectorAll("script[type='application/ld+json']")
+      .forEach((el) => {
+        const json = el.textContent?.trim();
+        if (json && json.length > 20) {
+          parts.push(`STRUCTURED_DATA: ${json}`);
+        }
+      });
+
+    // Remove noisy elements (keep JSON-LD)
+    document
+      .querySelectorAll(
+        "script:not([type='application/ld+json']), style, noscript"
+      )
       .forEach((el) => el.remove());
 
-    const text = document.body?.textContent || "";
-    return text.replace(/\s+/g, " ").slice(0, 8000);
+    // Meta title
+    const metaTitle =
+      document.querySelector('meta[property="og:title"]')?.content ||
+      document.querySelector('meta[name="title"]')?.content;
+    if (metaTitle) parts.push(`META_TITLE: ${metaTitle}`);
+
+    // Page title
+    if (document.title) {
+      parts.push(`PAGE_TITLE: ${document.title}`);
+    }
+
+    // Headings (often product names)
+    document.querySelectorAll("h1, h2").forEach((el) => {
+      const text = el.textContent?.trim();
+      if (text && text.length > 5) {
+        parts.push(`HEADING: ${text}`);
+      }
+    });
+
+    // Body text fallback
+    const bodyText = document.body?.textContent || "";
+    parts.push(bodyText);
+
+    return parts
+      .join("\n")
+      .replace(/\s+/g, " ")
+      .slice(0, 15000);
   } catch {
     return null;
   }
@@ -66,7 +107,7 @@ export async function POST(req) {
     const domain = getDomain(url);
     const domainAgeDays = await getDomainAge(domain);
 
-    // --- WEBSITE HEURISTICS ---
+    // ---- WEBSITE HEURISTICS ----
     let websiteTrustScore = 50;
     const flags = [];
 
@@ -79,7 +120,7 @@ export async function POST(req) {
       }
     }
 
-    // --- AI STEP #1: PAGE UNDERSTANDING ---
+    // ---- AI STEP 1: PAGE UNDERSTANDING ----
     const pageText = await extractPageText(url);
     let pageUnderstanding = null;
 
@@ -89,11 +130,11 @@ You are a product page parser.
 
 Rules:
 - Do NOT guess
+- Prefer structured data if present
 - If information is missing, return null
-- Be conservative
 - Output JSON ONLY
 
-Webpage text:
+Webpage content:
 """${pageText}"""
 
 Respond:
@@ -106,17 +147,18 @@ Respond:
 }
 `;
 
-      const pageCompletion = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [{ role: "user", content: pagePrompt }],
-      });
+      const pageCompletion =
+        await openai.chat.completions.create({
+          model: "gpt-4.1-mini",
+          messages: [{ role: "user", content: pagePrompt }],
+        });
 
       pageUnderstanding = JSON.parse(
         pageCompletion.choices[0].message.content
       );
     }
 
-    // --- AI STEP #2: SCAM ANALYSIS ---
+    // ---- AI STEP 2: SCAM ANALYSIS ----
     const scamPrompt = `
 You are an e-commerce risk analyst.
 
@@ -148,10 +190,11 @@ Respond:
 }
 `;
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [{ role: "user", content: scamPrompt }],
-    });
+    const completion =
+      await openai.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [{ role: "user", content: scamPrompt }],
+      });
 
     const aiResult = JSON.parse(
       completion.choices[0].message.content
