@@ -8,6 +8,20 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+/* ----------------- utilities ----------------- */
+
+function safeJSONParse(text) {
+  try {
+    const cleaned = text
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
+    return JSON.parse(cleaned);
+  } catch {
+    return null;
+  }
+}
+
 function getDomain(url) {
   return new URL(url).hostname.replace(/^www\./, "");
 }
@@ -27,79 +41,74 @@ async function getDomainAge(domain) {
   }
 }
 
-// --- SAFE JSON PARSER (CRITICAL FIX) ---
-function safeJsonParse(text) {
-  try {
-    const cleaned = text
-      .replace(/```json/gi, "")
-      .replace(/```/g, "")
-      .trim();
-    return JSON.parse(cleaned);
-  } catch {
-    return null;
-  }
+/* ----------------- page extraction ----------------- */
+
+async function extractHTML(url) {
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (compatible; ProductAnalyzer/1.0)",
+    },
+  });
+  return res.text();
 }
 
-/**
- * Extract readable + structured page data
- */
-async function extractPageText(url) {
-  try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (compatible; ProductAnalyzer/1.0)",
-      },
+function extractVisibleText(html) {
+  const dom = new JSDOM(html);
+  const document = dom.window.document;
+
+  document
+    .querySelectorAll("script, style, noscript")
+    .forEach((el) => el.remove());
+
+  return (
+    document.body?.textContent || ""
+  )
+    .replace(/\s+/g, " ")
+    .slice(0, 9000);
+}
+
+/* ----------------- review extraction ----------------- */
+
+function extractReviewText(html) {
+  const dom = new JSDOM(html);
+  const document = dom.window.document;
+
+  const candidates = [];
+
+  // JSON-LD reviews (best signal)
+  document
+    .querySelectorAll('script[type="application/ld+json"]')
+    .forEach((el) => {
+      try {
+        const data = JSON.parse(el.textContent);
+        if (data.review) {
+          candidates.push(JSON.stringify(data.review));
+        }
+      } catch {}
     });
 
-    const html = await res.text();
-    const dom = new JSDOM(html);
-    const document = dom.window.document;
-
-    const parts = [];
-
-    // JSON-LD (most reliable)
-    document
-      .querySelectorAll("script[type='application/ld+json']")
-      .forEach((el) => {
-        const json = el.textContent?.trim();
-        if (json && json.length > 20) {
-          parts.push(`STRUCTURED_DATA: ${json}`);
-        }
-      });
-
-    document
-      .querySelectorAll(
-        "script:not([type='application/ld+json']), style, noscript"
-      )
-      .forEach((el) => el.remove());
-
-    const metaTitle =
-      document.querySelector('meta[property="og:title"]')?.content ||
-      document.querySelector('meta[name="title"]')?.content;
-    if (metaTitle) parts.push(`META_TITLE: ${metaTitle}`);
-
-    if (document.title) {
-      parts.push(`PAGE_TITLE: ${document.title}`);
-    }
-
-    document.querySelectorAll("h1, h2").forEach((el) => {
+  // Visible review-like text
+  document
+    .querySelectorAll(
+      '[class*="review"], [id*="review"], [class*="rating"]'
+    )
+    .forEach((el) => {
       const text = el.textContent?.trim();
-      if (text && text.length > 5) {
-        parts.push(`HEADING: ${text}`);
+      if (text && text.length > 40) {
+        candidates.push(text);
       }
     });
 
-    parts.push(document.body?.textContent || "");
+  const combined = candidates
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .slice(0, 8000);
 
-    return parts
-      .join("\n")
-      .replace(/\s+/g, " ")
-      .slice(0, 15000);
-  } catch {
-    return null;
-  }
+  return combined || null;
 }
+
+/* ----------------- API handler ----------------- */
 
 export async function POST(req) {
   try {
@@ -114,36 +123,42 @@ export async function POST(req) {
     const domain = getDomain(url);
     const domainAgeDays = await getDomainAge(domain);
 
+    /* -------- website heuristics -------- */
+
     let websiteTrustScore = 50;
     const flags = [];
 
     if (domainAgeDays !== null) {
       if (domainAgeDays < 180) {
         websiteTrustScore -= 30;
-        flags.push("Domain registered recently");
+        flags.push("Recently registered domain");
       } else if (domainAgeDays > 1825) {
         websiteTrustScore += 20;
       }
     }
 
-    // --- AI STEP 1: PAGE UNDERSTANDING ---
-    const pageText = await extractPageText(url);
+    /* -------- fetch page -------- */
+
+    const html = await extractHTML(url);
+    const pageText = extractVisibleText(html);
+
+    /* -------- AI #1: page understanding -------- */
+
     let pageUnderstanding = null;
 
     if (pageText) {
-      const pageCompletion =
-        await openai.chat.completions.create({
-          model: "gpt-4.1-mini",
-          messages: [
-            {
-              role: "user",
-              content: `
+      const pagePrompt = `
 You are a product page parser.
-Return JSON ONLY. No markdown.
 
-Webpage:
+Rules:
+- Do NOT guess
+- If missing, return null
+- Output JSON ONLY
+
+Text:
 """${pageText}"""
 
+Respond:
 {
   "isProductPage": true | false,
   "productTitle": "string | null",
@@ -151,58 +166,103 @@ Webpage:
   "seller": "string | null",
   "productType": "string | null"
 }
-`,
-            },
-          ],
-        });
+`;
 
-      pageUnderstanding = safeJsonParse(
-        pageCompletion.choices[0].message.content
+      const r = await openai.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [{ role: "user", content: pagePrompt }],
+      });
+
+      pageUnderstanding = safeJSONParse(
+        r.choices[0].message.content
       );
     }
 
-    // --- AI STEP 2: SCAM ANALYSIS ---
-    const scamCompletion =
-      await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [
-          {
-            role: "user",
-            content: `
-Return JSON ONLY. No markdown.
+    /* -------- AI #2: product review analysis -------- */
 
+    const reviewText = extractReviewText(html);
+    let reviewAnalysis = null;
+
+    if (reviewText) {
+      const reviewPrompt = `
+You analyze product reviews.
+
+Rules:
+- Do NOT guess
+- Be conservative
+- Output JSON ONLY
+
+Reviews:
+"""${reviewText}"""
+
+Respond:
 {
-  "status": "good" | "bad",
-  "review": "string",
-  "sellerTrust": "high" | "medium" | "low",
-  "confidence": "high" | "medium" | "low",
-  "alternative": "string | null"
+  "hasReviews": true | false,
+  "reviewQuality": "high" | "medium" | "low",
+  "aiGeneratedLikelihood": "low" | "medium" | "high",
+  "redFlags": ["string"],
+  "summary": "string"
 }
+`;
 
-Context:
-URL: ${url}
-Domain: ${domain}
-Domain age: ${domainAgeDays ?? "unknown"}
-Trust score: ${websiteTrustScore}
-Product title: ${pageUnderstanding?.productTitle ?? "unknown"}
-Seller: ${pageUnderstanding?.seller ?? "unknown"}
-`,
-          },
-        ],
+      const r = await openai.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [{ role: "user", content: reviewPrompt }],
       });
 
-    const aiResult = safeJsonParse(
-      scamCompletion.choices[0].message.content
+      reviewAnalysis = safeJSONParse(
+        r.choices[0].message.content
+      );
+    }
+
+    /* -------- AI #3: final scam synthesis -------- */
+
+    const scamPrompt = `
+You are an e-commerce risk analyst.
+
+Inputs:
+- Domain: ${domain}
+- Domain age days: ${domainAgeDays ?? "unknown"}
+- Website score: ${websiteTrustScore}/100
+- Flags: ${flags.join(", ") || "none"}
+
+Product:
+- Title: ${pageUnderstanding?.productTitle ?? "unknown"}
+- Seller: ${pageUnderstanding?.seller ?? "unknown"}
+
+Reviews:
+${JSON.stringify(reviewAnalysis, null, 2)}
+
+Rules:
+- Conservative
+- Probabilistic language
+- Output JSON ONLY
+
+Respond:
+{
+  "status": "good" | "bad",
+  "confidence": "high" | "medium" | "low",
+  "review": "string",
+  "likelyDropship": true | false
+}
+`;
+
+    const r = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [{ role: "user", content: scamPrompt }],
+    });
+
+    const aiResult = safeJSONParse(
+      r.choices[0].message.content
     );
 
     return new Response(
       JSON.stringify({
-        aiResult: {
-          ...aiResult,
-          domain,
-          websiteTrustScore,
-          pageUnderstanding,
-        },
+        aiResult,
+        domain,
+        websiteTrustScore,
+        pageUnderstanding,
+        reviewAnalysis,
       }),
       { status: 200 }
     );
