@@ -27,8 +27,21 @@ async function getDomainAge(domain) {
   }
 }
 
+// --- SAFE JSON PARSER (CRITICAL FIX) ---
+function safeJsonParse(text) {
+  try {
+    const cleaned = text
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .trim();
+    return JSON.parse(cleaned);
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Extract readable + structured page data for AI understanding
+ * Extract readable + structured page data
  */
 async function extractPageText(url) {
   try {
@@ -45,7 +58,7 @@ async function extractPageText(url) {
 
     const parts = [];
 
-    // ---- JSON-LD PRODUCT DATA (MOST IMPORTANT) ----
+    // JSON-LD (most reliable)
     document
       .querySelectorAll("script[type='application/ld+json']")
       .forEach((el) => {
@@ -55,25 +68,21 @@ async function extractPageText(url) {
         }
       });
 
-    // Remove noisy elements (keep JSON-LD)
     document
       .querySelectorAll(
         "script:not([type='application/ld+json']), style, noscript"
       )
       .forEach((el) => el.remove());
 
-    // Meta title
     const metaTitle =
       document.querySelector('meta[property="og:title"]')?.content ||
       document.querySelector('meta[name="title"]')?.content;
     if (metaTitle) parts.push(`META_TITLE: ${metaTitle}`);
 
-    // Page title
     if (document.title) {
       parts.push(`PAGE_TITLE: ${document.title}`);
     }
 
-    // Headings (often product names)
     document.querySelectorAll("h1, h2").forEach((el) => {
       const text = el.textContent?.trim();
       if (text && text.length > 5) {
@@ -81,9 +90,7 @@ async function extractPageText(url) {
       }
     });
 
-    // Body text fallback
-    const bodyText = document.body?.textContent || "";
-    parts.push(bodyText);
+    parts.push(document.body?.textContent || "");
 
     return parts
       .join("\n")
@@ -107,7 +114,6 @@ export async function POST(req) {
     const domain = getDomain(url);
     const domainAgeDays = await getDomainAge(domain);
 
-    // ---- WEBSITE HEURISTICS ----
     let websiteTrustScore = 50;
     const flags = [];
 
@@ -120,24 +126,24 @@ export async function POST(req) {
       }
     }
 
-    // ---- AI STEP 1: PAGE UNDERSTANDING ----
+    // --- AI STEP 1: PAGE UNDERSTANDING ---
     const pageText = await extractPageText(url);
     let pageUnderstanding = null;
 
     if (pageText) {
-      const pagePrompt = `
+      const pageCompletion =
+        await openai.chat.completions.create({
+          model: "gpt-4.1-mini",
+          messages: [
+            {
+              role: "user",
+              content: `
 You are a product page parser.
+Return JSON ONLY. No markdown.
 
-Rules:
-- Do NOT guess
-- Prefer structured data if present
-- If information is missing, return null
-- Output JSON ONLY
-
-Webpage content:
+Webpage:
 """${pageText}"""
 
-Respond:
 {
   "isProductPage": true | false,
   "productTitle": "string | null",
@@ -145,42 +151,26 @@ Respond:
   "seller": "string | null",
   "productType": "string | null"
 }
-`;
-
-      const pageCompletion =
-        await openai.chat.completions.create({
-          model: "gpt-4.1-mini",
-          messages: [{ role: "user", content: pagePrompt }],
+`,
+            },
+          ],
         });
 
-      pageUnderstanding = JSON.parse(
+      pageUnderstanding = safeJsonParse(
         pageCompletion.choices[0].message.content
       );
     }
 
-    // ---- AI STEP 2: SCAM ANALYSIS ----
-    const scamPrompt = `
-You are an e-commerce risk analyst.
+    // --- AI STEP 2: SCAM ANALYSIS ---
+    const scamCompletion =
+      await openai.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [
+          {
+            role: "user",
+            content: `
+Return JSON ONLY. No markdown.
 
-Given:
-- Product URL: ${url}
-- Domain: ${domain}
-- Domain age (days): ${domainAgeDays ?? "unknown"}
-- Website trust score: ${websiteTrustScore}/100
-- Flags: ${flags.join(", ") || "none"}
-
-Product understanding:
-- Product title: ${pageUnderstanding?.productTitle ?? "unknown"}
-- Product type: ${pageUnderstanding?.productType ?? "unknown"}
-- Seller: ${pageUnderstanding?.seller ?? "unknown"}
-
-Rules:
-- Do NOT invent facts
-- Be conservative
-- Use probabilistic language
-- Output JSON ONLY
-
-Respond:
 {
   "status": "good" | "bad",
   "review": "string",
@@ -188,16 +178,21 @@ Respond:
   "confidence": "high" | "medium" | "low",
   "alternative": "string | null"
 }
-`;
 
-    const completion =
-      await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [{ role: "user", content: scamPrompt }],
+Context:
+URL: ${url}
+Domain: ${domain}
+Domain age: ${domainAgeDays ?? "unknown"}
+Trust score: ${websiteTrustScore}
+Product title: ${pageUnderstanding?.productTitle ?? "unknown"}
+Seller: ${pageUnderstanding?.seller ?? "unknown"}
+`,
+          },
+        ],
       });
 
-    const aiResult = JSON.parse(
-      completion.choices[0].message.content
+    const aiResult = safeJsonParse(
+      scamCompletion.choices[0].message.content
     );
 
     return new Response(
