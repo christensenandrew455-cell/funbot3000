@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 
 import { OpenAI } from "openai";
 import whois from "whois-json";
-import { chromium } from "playwright-core";
+import { chromium } from "playwright";
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /* ----------------- helpers ----------------- */
