@@ -13,7 +13,6 @@ function safeJSONParse(text, fallback = {}) {
       .replace(/```json/gi, "")
       .replace(/```/g, "")
       .trim()
-      // take substring from first { to last }
       .match(/\{[\s\S]*\}/)?.[0];
     return JSON.parse(cleaned) || fallback;
   } catch (err) {
@@ -40,7 +39,7 @@ async function fetchHTML(url) {
 function extractVisibleText(html) {
   const dom = new JSDOM(html);
   const document = dom.window.document;
-  document.querySelectorAll("script, style, noscript").forEach((el) => el.remove());
+  document.querySelectorAll("script, style, noscript").forEach(el => el.remove());
   return (document.body?.textContent || "").replace(/\s+/g, " ").slice(0, 9000);
 }
 
@@ -49,20 +48,19 @@ function extractReviewText(html) {
   const document = dom.window.document;
   const candidates = [];
 
-  document.querySelectorAll('script[type="application/ld+json"]').forEach((el) => {
+  document.querySelectorAll('script[type="application/ld+json"]').forEach(el => {
     try {
       const data = JSON.parse(el.textContent);
       if (data.review) candidates.push(JSON.stringify(data.review));
     } catch {}
   });
 
-  document.querySelectorAll('[class*="review"], [id*="review"], [class*="rating"]').forEach((el) => {
+  document.querySelectorAll('[class*="review"], [id*="review"], [class*="rating"]').forEach(el => {
     const text = el.textContent?.trim();
     if (text && text.length > 40) candidates.push(text);
   });
 
-  const combined = candidates.join(" ").replace(/\s+/g, " ").slice(0, 8000);
-  return combined || null;
+  return candidates.join(" ").replace(/\s+/g, " ").slice(0, 8000) || null;
 }
 
 /* ----------------- API handler ----------------- */
@@ -75,7 +73,7 @@ export async function POST(req) {
     const html = await fetchHTML(url);
     const pageText = extractVisibleText(html);
 
-    /* -------- AI #1: product page parsing -------- */
+    // --- AI #1: product page ---
     let pageUnderstanding = {};
     if (pageText) {
       try {
@@ -104,11 +102,10 @@ Respond:
         pageUnderstanding = safeJSONParse(r.choices[0].message.content, {});
       } catch (err) {
         console.error("Page parsing AI failed:", err);
-        pageUnderstanding = {};
       }
     }
 
-    /* -------- AI #2: website trust analysis -------- */
+    // --- AI #2: website trust ---
     let websiteTrust = {};
     try {
       const prompt = `
@@ -133,10 +130,9 @@ Respond:
       websiteTrust = safeJSONParse(r.choices[0].message.content, {});
     } catch (err) {
       console.error("Website trust AI failed:", err);
-      websiteTrust = {};
     }
 
-    /* -------- AI #3: product review analysis -------- */
+    // --- AI #3: review analysis ---
     const reviewText = extractReviewText(html);
     let reviewAnalysis = {};
     if (reviewText) {
@@ -147,8 +143,10 @@ Rules:
 - Do NOT guess
 - Be conservative
 - Output JSON ONLY
+
 Reviews:
 """${reviewText}"""
+
 Respond:
 {
   "hasReviews": true | false,
@@ -164,11 +162,10 @@ Respond:
         reviewAnalysis = safeJSONParse(r.choices[0].message.content, {});
       } catch (err) {
         console.error("Review analysis AI failed:", err);
-        reviewAnalysis = {};
       }
     }
 
-    /* -------- AI #4: seller analysis -------- */
+    // --- AI #4: seller analysis ---
     let sellerAnalysis = {};
     const sellerName = pageUnderstanding?.seller;
     if (sellerName) {
@@ -197,11 +194,10 @@ Respond:
         sellerAnalysis = safeJSONParse(r.choices[0].message.content, {});
       } catch (err) {
         console.error("Seller analysis AI failed:", err);
-        sellerAnalysis = {};
       }
     }
 
-    /* -------- AI #5: recommendation AI -------- */
+    // --- AI #5: recommendation ---
     let recommendation = {};
     try {
       const prompt = `
@@ -232,24 +228,21 @@ Respond:
       recommendation = safeJSONParse(r.choices[0].message.content, {});
     } catch (err) {
       console.error("Recommendation AI failed:", err);
-      recommendation = {};
     }
 
-    return new Response(
-      JSON.stringify({
-        pageUnderstanding,
-        websiteTrust,
-        reviewAnalysis,
-        sellerAnalysis,
-        recommendation,
-      }),
-      { status: 200 }
-    );
+    // --- Map everything to old front-end format ---
+    const aiResult = {
+      status: recommendation.action === "keep" ? "good" : "bad",
+      review: reviewAnalysis?.summary || "No summary available",
+      title: pageUnderstanding?.productTitle || "No title detected",
+      sellerTrust: websiteTrust?.isTrusted ? "Trusted" : "Untrusted",
+      confidence: websiteTrust?.confidence || "medium",
+      alternative: recommendation?.recommendedLink || null,
+    };
+
+    return new Response(JSON.stringify({ aiResult }), { status: 200 });
   } catch (err) {
     console.error(err);
-    return new Response(
-      JSON.stringify({ error: "Server error" }),
-      { status: 500 }
-    );
+    return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
   }
 }
