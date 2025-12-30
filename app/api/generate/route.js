@@ -6,20 +6,28 @@ import { JSDOM } from "jsdom";
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /* ----------------- utilities ----------------- */
-function safeJSONParse(text) {
+function safeJSONParse(text, fallback = {}) {
+  if (!text) return fallback;
   try {
     const cleaned = text
       .replace(/```json/gi, "")
       .replace(/```/g, "")
-      .trim();
-    return JSON.parse(cleaned);
-  } catch {
-    return null;
+      .trim()
+      // take substring from first { to last }
+      .match(/\{[\s\S]*\}/)?.[0];
+    return JSON.parse(cleaned) || fallback;
+  } catch (err) {
+    console.error("JSON parse failed:", err);
+    return fallback;
   }
 }
 
 function getDomain(url) {
-  return new URL(url).hostname.replace(/^www\./, "");
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
 }
 
 async function fetchHTML(url) {
@@ -41,7 +49,6 @@ function extractReviewText(html) {
   const document = dom.window.document;
   const candidates = [];
 
-  // JSON-LD reviews
   document.querySelectorAll('script[type="application/ld+json"]').forEach((el) => {
     try {
       const data = JSON.parse(el.textContent);
@@ -49,7 +56,6 @@ function extractReviewText(html) {
     } catch {}
   });
 
-  // Visible review-like text
   document.querySelectorAll('[class*="review"], [id*="review"], [class*="rating"]').forEach((el) => {
     const text = el.textContent?.trim();
     if (text && text.length > 40) candidates.push(text);
@@ -65,16 +71,16 @@ export async function POST(req) {
     const { url } = await req.json();
     if (!url) return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
 
-    const domain = getDomain(url);
+    const domain = getDomain(url) || "unknown";
     const html = await fetchHTML(url);
     const pageText = extractVisibleText(html);
 
     /* -------- AI #1: product page parsing -------- */
-    let pageUnderstanding = null;
+    let pageUnderstanding = {};
     if (pageText) {
-      const pagePrompt = `
+      try {
+        const prompt = `
 You are a product page parser.
-
 Rules:
 - Do NOT guess
 - If missing, return null
@@ -90,57 +96,59 @@ Respond:
   "price": "string | null",
   "seller": "string | null",
   "productType": "string | null"
-}
-`;
-      const r = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [{ role: "user", content: pagePrompt }],
-      });
-      pageUnderstanding = safeJSONParse(r.choices[0].message.content);
+}`;
+        const r = await openai.chat.completions.create({
+          model: "gpt-4.1-mini",
+          messages: [{ role: "user", content: prompt }],
+        });
+        pageUnderstanding = safeJSONParse(r.choices[0].message.content, {});
+      } catch (err) {
+        console.error("Page parsing AI failed:", err);
+        pageUnderstanding = {};
+      }
     }
 
     /* -------- AI #2: website trust analysis -------- */
-    let websiteTrust = null;
-    const websitePrompt = `
+    let websiteTrust = {};
+    try {
+      const prompt = `
 You are an e-commerce website evaluator.
-
 Given:
 - Website domain: ${domain}
-
 Rules:
 - Do NOT guess
 - Assess trustworthiness of the website
 - Consider known scams, reputation, user safety
 - Output JSON ONLY
-
 Respond:
 {
   "isTrusted": true | false,
   "confidence": "high" | "medium" | "low",
   "reason": "string"
-}
-`;
-    const rWebsite = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [{ role: "user", content: websitePrompt }],
-    });
-    websiteTrust = safeJSONParse(rWebsite.choices[0].message.content);
+}`;
+      const r = await openai.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [{ role: "user", content: prompt }],
+      });
+      websiteTrust = safeJSONParse(r.choices[0].message.content, {});
+    } catch (err) {
+      console.error("Website trust AI failed:", err);
+      websiteTrust = {};
+    }
 
     /* -------- AI #3: product review analysis -------- */
     const reviewText = extractReviewText(html);
-    let reviewAnalysis = null;
+    let reviewAnalysis = {};
     if (reviewText) {
-      const reviewPrompt = `
+      try {
+        const prompt = `
 You analyze product reviews.
-
 Rules:
 - Do NOT guess
 - Be conservative
 - Output JSON ONLY
-
 Reviews:
 """${reviewText}"""
-
 Respond:
 {
   "hasReviews": true | false,
@@ -148,58 +156,61 @@ Respond:
   "aiGeneratedLikelihood": "low" | "medium" | "high",
   "redFlags": ["string"],
   "summary": "string"
-}
-`;
-      const r = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [{ role: "user", content: reviewPrompt }],
-      });
-      reviewAnalysis = safeJSONParse(r.choices[0].message.content);
+}`;
+        const r = await openai.chat.completions.create({
+          model: "gpt-4.1-mini",
+          messages: [{ role: "user", content: prompt }],
+        });
+        reviewAnalysis = safeJSONParse(r.choices[0].message.content, {});
+      } catch (err) {
+        console.error("Review analysis AI failed:", err);
+        reviewAnalysis = {};
+      }
     }
 
     /* -------- AI #4: seller analysis -------- */
-    let sellerAnalysis = null;
+    let sellerAnalysis = {};
     const sellerName = pageUnderstanding?.seller;
     if (sellerName) {
-      const sellerPrompt = `
+      try {
+        const prompt = `
 You analyze e-commerce sellers.
-
 Given:
 - Seller name: ${sellerName}
 - Domain: ${domain}
-
 Rules:
 - Do NOT guess
 - If no data, return null
 - Output JSON ONLY
 - Focus on reputation and reviews
-
 Respond:
 {
   "sellerExists": true | false,
   "sellerReviewCount": number | null,
   "sellerReviewQuality": "high" | "medium" | "low" | null,
   "redFlags": ["string"]
-}
-`;
-      const r = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [{ role: "user", content: sellerPrompt }],
-      });
-      sellerAnalysis = safeJSONParse(r.choices[0].message.content);
+}`;
+        const r = await openai.chat.completions.create({
+          model: "gpt-4.1-mini",
+          messages: [{ role: "user", content: prompt }],
+        });
+        sellerAnalysis = safeJSONParse(r.choices[0].message.content, {});
+      } catch (err) {
+        console.error("Seller analysis AI failed:", err);
+        sellerAnalysis = {};
+      }
     }
 
     /* -------- AI #5: recommendation AI -------- */
-    let recommendation = null;
-    const recPrompt = `
+    let recommendation = {};
+    try {
+      const prompt = `
 You are an e-commerce assistant.
-
 Inputs:
 - Website trust: ${JSON.stringify(websiteTrust)}
 - Product: ${JSON.stringify(pageUnderstanding)}
 - Seller: ${JSON.stringify(sellerAnalysis)}
 - Product reviews: ${JSON.stringify(reviewAnalysis)}
-
 Task:
 - Decide if the user should:
   1) Keep the product and seller
@@ -208,21 +219,22 @@ Task:
   4) Switch to a better similar product
 - Prefer original website when possible
 - Output JSON ONLY
-
 Respond:
 {
   "action": "keep" | "newSeller" | "newWebsite" | "betterProduct",
   "reason": "string",
   "recommendedLink": "string | null"
-}
-`;
-    const rRec = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [{ role: "user", content: recPrompt }],
-    });
-    recommendation = safeJSONParse(rRec.choices[0].message.content);
+}`;
+      const r = await openai.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [{ role: "user", content: prompt }],
+      });
+      recommendation = safeJSONParse(r.choices[0].message.content, {});
+    } catch (err) {
+      console.error("Recommendation AI failed:", err);
+      recommendation = {};
+    }
 
-    /* -------- Final response -------- */
     return new Response(
       JSON.stringify({
         pageUnderstanding,
@@ -233,7 +245,6 @@ Respond:
       }),
       { status: 200 }
     );
-
   } catch (err) {
     console.error(err);
     return new Response(
