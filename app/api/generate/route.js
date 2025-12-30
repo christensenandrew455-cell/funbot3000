@@ -1,12 +1,12 @@
 export const runtime = "nodejs";
 
 import { OpenAI } from "openai";
-import { JSDOM } from "jsdom";
 import whois from "whois-json";
+import { chromium } from "playwright";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-/* ----------------- utilities ----------------- */
+/* ----------------- helpers ----------------- */
 
 function safeJSONParse(text, fallback = {}) {
   if (!text) return fallback;
@@ -30,45 +30,6 @@ function getDomain(url) {
   }
 }
 
-async function fetchHTML(url) {
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (compatible; DropLinkAI/1.0)",
-      Accept: "text/html",
-    },
-  });
-  return res.text();
-}
-
-function extractVisibleText(html) {
-  const dom = new JSDOM(html);
-  const doc = dom.window.document;
-  doc.querySelectorAll("script, style, noscript").forEach(el => el.remove());
-  return (doc.body?.textContent || "").replace(/\s+/g, " ").slice(0, 8000);
-}
-
-function extractReviewText(html) {
-  const dom = new JSDOM(html);
-  const doc = dom.window.document;
-  const chunks = [];
-
-  doc.querySelectorAll('[class*="review"], [id*="review"], [class*="rating"]').forEach(el => {
-    const t = el.textContent?.trim();
-    if (t && t.length > 50) chunks.push(t);
-  });
-
-  return chunks.join(" ").slice(0, 6000) || null;
-}
-
-function reviewSignals(html) {
-  const t = html.toLowerCase();
-  return {
-    mentionsReviews: t.includes("review"),
-    mentionsStars: t.includes("★") || t.includes("stars"),
-    mentionsRatings: t.includes("rating"),
-  };
-}
-
 async function getDomainSignals(domain) {
   try {
     const data = await whois(domain);
@@ -90,7 +51,57 @@ async function getDomainSignals(domain) {
   }
 }
 
-/* ----------------- API handler ----------------- */
+/* ----------------- PLAYWRIGHT SCRAPER ----------------- */
+
+async function scrapeWithPlaywright(url) {
+  const browser = await chromium.launch({
+    headless: true,
+  });
+
+  const page = await browser.newPage({
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120",
+  });
+
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+
+    // scroll to load lazy content (reviews)
+    for (let i = 0; i < 3; i++) {
+      await page.mouse.wheel(0, 2000);
+      await page.waitForTimeout(1200);
+    }
+
+    const pageText = await page.evaluate(() => {
+      document.querySelectorAll("script, style, noscript").forEach(el => el.remove());
+      return document.body?.innerText || "";
+    });
+
+    const reviewText = await page.evaluate(() => {
+      const nodes = Array.from(
+        document.querySelectorAll(
+          '[class*="review"], [id*="review"], [class*="rating"], [data-review]'
+        )
+      );
+      return nodes
+        .map(n => n.innerText)
+        .filter(t => t && t.length > 50)
+        .join(" ");
+    });
+
+    await browser.close();
+
+    return {
+      pageText: pageText.slice(0, 8000),
+      reviewText: reviewText.slice(0, 8000) || null,
+    };
+  } catch (err) {
+    await browser.close();
+    throw err;
+  }
+}
+
+/* ----------------- API HANDLER ----------------- */
 
 export async function POST(req) {
   try {
@@ -101,17 +112,15 @@ export async function POST(req) {
       });
 
     const domain = getDomain(url) || "unknown";
-    const html = await fetchHTML(url);
-    const pageText = extractVisibleText(html);
-    const reviewText = extractReviewText(html);
-    const reviewMeta = reviewSignals(html);
     const domainSignals = await getDomainSignals(domain);
+
+    const { pageText, reviewText } = await scrapeWithPlaywright(url);
 
     /* -------- AI #1: Page parsing -------- */
     let pageData = {};
     if (pageText) {
       const prompt = `
-Extract structured product information.
+Extract structured product data.
 Rules:
 - No guessing
 - JSON only
@@ -134,11 +143,11 @@ Respond:
       pageData = safeJSONParse(r.choices[0].message.content, {});
     }
 
-    /* -------- AI #2: Review language analysis -------- */
+    /* -------- AI #2: Review analysis -------- */
     let reviewAnalysis = {};
     if (reviewText) {
       const prompt = `
-Analyze review language quality.
+Analyze product reviews.
 Rules:
 - Conservative
 - No guessing
@@ -146,9 +155,6 @@ Rules:
 
 Reviews:
 """${reviewText}"""
-
-Signals:
-${JSON.stringify(reviewMeta)}
 
 Respond:
 {
@@ -164,18 +170,16 @@ Respond:
       reviewAnalysis = safeJSONParse(r.choices[0].message.content, {});
     }
 
-    /* -------- AI #3: Seller name pattern analysis -------- */
+    /* -------- AI #3: Seller name pattern -------- */
     let sellerAnalysis = {};
     if (pageData?.seller) {
       const prompt = `
-Analyze seller name for fraud patterns.
-You are NOT checking reputation.
-You are checking name structure only.
+Analyze seller name pattern only (NOT reputation).
 
-Seller name: "${pageData.seller}"
+Seller: "${pageData.seller}"
 Domain: ${domain}
 
-Respond JSON only:
+Respond JSON:
 {
   "nameLooksLegit": true | false,
   "nameType": "brand" | "individual" | "random" | "unknown",
@@ -188,27 +192,26 @@ Respond JSON only:
       sellerAnalysis = safeJSONParse(r.choices[0].message.content, {});
     }
 
-    /* -------- AI #4: Final decision -------- */
+    /* -------- AI #4: Final verdict -------- */
     const finalPrompt = `
-You are a risk assessment AI for online shopping.
+You are an online shopping risk assessor.
 
-FACTUAL SIGNALS:
+FACTS:
 Website:
 ${JSON.stringify(domainSignals)}
 
 Product:
 ${JSON.stringify(pageData)}
 
-Seller pattern analysis:
+Seller pattern:
 ${JSON.stringify(sellerAnalysis)}
 
 Reviews:
 ${JSON.stringify(reviewAnalysis)}
 
 Rules:
-- Be conservative
-- Prefer safety
-- If insufficient data, lean toward caution
+- Conservative
+- Safety first
 - JSON only
 
 Respond:
@@ -218,7 +221,6 @@ Respond:
   "summary": "string",
   "recommendedAlternative": "string | null"
 }`;
-
     const finalResp = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [{ role: "user", content: finalPrompt }],
@@ -231,7 +233,7 @@ Respond:
 
     const aiResult = {
       status: finalDecision.verdict === "low_risk" ? "good" : "bad",
-      review: finalDecision.summary || "Insufficient data to assess safely.",
+      review: finalDecision.summary || "Insufficient data.",
       title: pageData.productTitle || "Unknown product",
       sellerTrust:
         sellerAnalysis?.nameLooksLegit === false ? "Suspicious" : "Unclear",
