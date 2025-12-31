@@ -2,6 +2,7 @@ export const runtime = "nodejs";
 
 import { OpenAI } from "openai";
 import whois from "whois-json";
+import fetch from "node-fetch";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -29,11 +30,17 @@ function getDomain(url) {
   }
 }
 
-/* ----------------- DOMAIN SIGNALS ----------------- */
+/* ----------------- DOMAIN SIGNALS (SAFE) ----------------- */
 
 async function getDomainSignals(domain) {
   try {
-    const data = await whois(domain);
+    const data = await Promise.race([
+      whois(domain),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("WHOIS timeout")), 3000)
+      ),
+    ]);
+
     const created =
       data.creationDate ||
       data.createdDate ||
@@ -51,11 +58,16 @@ async function getDomainSignals(domain) {
       registrar: data.registrar || null,
     };
   } catch {
-    return { domain, ageDays: null, registrar: null };
+    return {
+      domain,
+      ageDays: null,
+      registrar: null,
+      whoisFailed: true,
+    };
   }
 }
 
-/* ----------------- STATIC FETCH (NO PLAYWRIGHT) ----------------- */
+/* ----------------- STATIC FETCH ----------------- */
 
 async function fetchPageText(url) {
   const res = await fetch(url, {
@@ -66,17 +78,20 @@ async function fetchPageText(url) {
     },
   });
 
+  if (!res.ok) {
+    throw new Error(`Fetch failed: ${res.status}`);
+  }
+
   const html = await res.text();
 
-  const text = html
+  return html
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
     .replace(/<noscript[\s\S]*?>[\s\S]*?<\/noscript>/gi, "")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
-    .trim();
-
-  return text.slice(0, 9000);
+    .trim()
+    .slice(0, 9000);
 }
 
 /* ----------------- API HANDLER ----------------- */
@@ -96,9 +111,7 @@ export async function POST(req) {
     const pageText = await fetchPageText(url);
 
     /* -------- AI #1: PAGE EXTRACTION -------- */
-    let pageData = {};
-    {
-      const prompt = `
+    const extractPrompt = `
 Extract factual on-page product data.
 
 Rules:
@@ -117,26 +130,21 @@ Respond:
   "brand": "string | null",
   "productType": "string | null"
 }`;
-      const r = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [{ role: "user", content: prompt }],
-      });
-      pageData = safeJSONParse(r.choices[0].message.content, {});
-    }
+    const extractResp = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [{ role: "user", content: extractPrompt }],
+    });
+    const pageData = safeJSONParse(
+      extractResp.choices[0].message.content,
+      {}
+    );
 
-    /* -------- AI #2: WEBSITE TRUST (1–5) -------- */
-    let siteTrust = {};
-    {
-      const prompt = `
-You are evaluating WEBSITE TRUSTWORTHINESS.
+    /* -------- AI #2: WEBSITE TRUST -------- */
+    const trustPrompt = `
+Evaluate website trustworthiness (1–5).
 
 Rules:
 - Do NOT use product reviews
-- Consider:
-  - Domain age
-  - Registrar
-  - Platform reputation (Amazon, etc.)
-  - Presence of third-party sellers
 - Conservative
 - JSON only
 
@@ -153,124 +161,26 @@ Respond:
   "reasoning": "string",
   "riskFactors": ["string"]
 }`;
-      const r = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [{ role: "user", content: prompt }],
-      });
-      siteTrust = safeJSONParse(r.choices[0].message.content, {});
-    }
-
-    /* -------- AI #3: SELLER CLARITY -------- */
-    let sellerAssessment = {};
-    {
-      const prompt = `
-Assess seller clarity ONLY.
-
-Rules:
-- No reputation guessing
-- Missing or generic sellers increase risk
-- JSON only
-
-Seller:
-"${pageData?.seller || "none"}"
-
-Respond:
-{
-  "sellerFound": true | false,
-  "sellerClarity": "clear" | "unclear" | "missing",
-  "riskContribution": "low" | "medium" | "high",
-  "notes": "string"
-}`;
-      const r = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [{ role: "user", content: prompt }],
-      });
-      sellerAssessment = safeJSONParse(r.choices[0].message.content, {});
-    }
-
-    /* -------- AI #4: PRODUCT PRICE & QUALITY -------- */
-    let productAssessment = {};
-    {
-      const prompt = `
-Evaluate product price fairness and quality risk.
-
-Rules:
-- Reviews are secondary
-- Be conservative
-- JSON only
-
-Product:
-${JSON.stringify(pageData)}
-
-Respond:
-{
-  "priceFairness": "cheap" | "fair" | "overpriced" | "unknown",
-  "qualityRisk": "low" | "medium" | "high",
-  "explanation": "string"
-}`;
-      const r = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [{ role: "user", content: prompt }],
-      });
-      productAssessment = safeJSONParse(r.choices[0].message.content, {});
-    }
-
-    /* -------- AI #5: FINAL VERDICT -------- */
-    let finalDecision = {};
-    {
-      const prompt = `
-You are an online shopping risk evaluator.
-
-Rules:
-- Website trust is primary
-- Seller clarity affects site trust
-- Product quality affects recommendation
-- Prefer SAME WEBSITE alternatives if needed
-- JSON only
-
-Website Trust:
-${JSON.stringify(siteTrust)}
-
-Seller:
-${JSON.stringify(sellerAssessment)}
-
-Product:
-${JSON.stringify(productAssessment)}
-
-Respond:
-{
-  "overallRisk": "low" | "medium" | "high",
-  "confidence": "high" | "medium" | "low",
-  "summary": "string",
-  "recommendedAction": "buy" | "buy_but_caution" | "avoid",
-  "alternativeSuggestion":
-    "same_site_better_seller" |
-    "same_site_similar_product" |
-    "different_site" |
-    null
-}`;
-      const r = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [{ role: "user", content: prompt }],
-      });
-      finalDecision = safeJSONParse(r.choices[0].message.content, {});
-    }
-
-    /* -------- RESPONSE -------- */
+    const trustResp = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [{ role: "user", content: trustPrompt }],
+    });
+    const siteTrust = safeJSONParse(
+      trustResp.choices[0].message.content,
+      {}
+    );
 
     return new Response(
       JSON.stringify({
-        websiteTrust: siteTrust,
-        seller: sellerAssessment,
-        product: productAssessment,
-        verdict: finalDecision,
+        website: siteTrust,
+        product: pageData,
       }),
       { status: 200 }
     );
   } catch (err) {
-    console.error(err);
+    console.error("API ERROR:", err);
     return new Response(
-      JSON.stringify({ error: "Server error" }),
+      JSON.stringify({ error: err.message || "Server error" }),
       { status: 500 }
     );
   }
