@@ -8,6 +8,25 @@ export default function ResultsClient() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  function renderStars(score) {
+    const stars = [];
+    for (let i = 1; i <= 5; i++) {
+      stars.push(
+        <span
+          key={i}
+          style={{
+            color: i <= score ? "#F59E0B" : "#ddd",
+            fontSize: 20,
+            marginRight: 2,
+          }}
+        >
+          ★
+        </span>
+      );
+    }
+    return <div>{stars}</div>;
+  }
+
   async function fetchAi() {
     if (!url) {
       setError("Please enter a product link.");
@@ -37,7 +56,7 @@ export default function ResultsClient() {
   }
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: 24, maxWidth: 600, margin: "0 auto" }}>
       <h1>Product Link Review AI</h1>
 
       <input
@@ -48,23 +67,79 @@ export default function ResultsClient() {
         style={{ padding: 12, width: "100%", marginBottom: 12 }}
       />
 
-      <button onClick={fetchAi} disabled={loading}>
+      <button
+        onClick={fetchAi}
+        disabled={loading}
+        style={{ padding: 12, fontSize: 16, marginBottom: 16 }}
+      >
         {loading ? "Processing..." : "Generate Review"}
       </button>
 
       {error && <p style={{ color: "red" }}>{error}</p>}
 
       {aiResult && (
-        <div style={{ marginTop: 20 }}>
-          <p><strong>Title:</strong> {aiResult.title}</p>
-          <p><strong>Status:</strong> {aiResult.status}</p>
-          <p><strong>Seller Trust:</strong> {aiResult.sellerTrust}</p>
-          <p><strong>Confidence:</strong> {aiResult.confidence}</p>
-          <p><strong>Review:</strong> {aiResult.review}</p>
+        <div
+          style={{
+            marginTop: 20,
+            border: "1px solid #ddd",
+            borderRadius: 12,
+            padding: 20,
+          }}
+        >
+          <h2 style={{ marginBottom: 16 }}>
+            {aiResult.title || "No Title Found"}
+          </h2>
+
+          {/* Ratings */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: 16,
+              marginBottom: 20,
+            }}
+          >
+            <div>
+              <strong>Website Trust</strong>
+              {renderStars(aiResult.websiteTrust?.score || 0)}
+              <p style={{ fontSize: 12 }}>
+                {aiResult.websiteTrust?.reason || "N/A"}
+              </p>
+            </div>
+            <div>
+              <strong>Seller Trust</strong>
+              {renderStars(aiResult.sellerTrust?.score || 0)}
+              <p style={{ fontSize: 12 }}>
+                {aiResult.sellerTrust?.reason || "N/A"}
+              </p>
+            </div>
+            <div>
+              <strong>Product Trust</strong>
+              {renderStars(aiResult.productTrust?.score || 0)}
+              <p style={{ fontSize: 12 }}>
+                {aiResult.productTrust?.reason || "N/A"}
+              </p>
+            </div>
+          </div>
+
+          {/* Overall Rating */}
+          <div style={{ borderTop: "1px solid #eee", paddingTop: 16 }}>
+            <strong>Overall Rating</strong>
+            {renderStars(aiResult.overall?.score || 0)}
+            <p style={{ fontSize: 14 }}>
+              {aiResult.overall?.reason || "No reasoning provided"}
+            </p>
+          </div>
+
+          {/* Alternative if bad */}
           {aiResult.status === "bad" && aiResult.alternative && (
-            <p>
+            <p style={{ marginTop: 16 }}>
               <strong>Alternative:</strong>{" "}
-              <a href={aiResult.alternative} target="_blank" rel="noreferrer">
+              <a
+                href={aiResult.alternative}
+                target="_blank"
+                rel="noreferrer"
+              >
                 {aiResult.alternative}
               </a>
             </p>
