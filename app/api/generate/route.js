@@ -6,8 +6,6 @@ import fetch from "node-fetch";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-/* ----------------- helpers ----------------- */
-
 function safeJSONParse(text, fallback = {}) {
   if (!text) return fallback;
   try {
@@ -29,8 +27,6 @@ function getDomain(url) {
     return null;
   }
 }
-
-/* ----------------- DOMAIN SIGNALS (SAFE) ----------------- */
 
 async function getDomainSignals(domain) {
   try {
@@ -67,8 +63,6 @@ async function getDomainSignals(domain) {
   }
 }
 
-/* ----------------- STATIC FETCH ----------------- */
-
 async function fetchPageText(url) {
   const res = await fetch(url, {
     headers: {
@@ -78,9 +72,7 @@ async function fetchPageText(url) {
     },
   });
 
-  if (!res.ok) {
-    throw new Error(`Fetch failed: ${res.status}`);
-  }
+  if (!res.ok) throw new Error(`Fetch failed ${res.status}`);
 
   const html = await res.text();
 
@@ -93,8 +85,6 @@ async function fetchPageText(url) {
     .trim()
     .slice(0, 9000);
 }
-
-/* ----------------- API HANDLER ----------------- */
 
 export async function POST(req) {
   try {
@@ -110,61 +100,51 @@ export async function POST(req) {
     const domainSignals = await getDomainSignals(domain);
     const pageText = await fetchPageText(url);
 
-    /* -------- AI #1: PAGE EXTRACTION -------- */
+    /* -------- AI #1: Product extraction -------- */
     const extractPrompt = `
 Extract factual on-page product data.
-
-Rules:
-- No guessing
-- JSON only
+No guessing. JSON only.
 
 Text:
 """${pageText}"""
 
 Respond:
 {
-  "isProductPage": true | false,
   "productTitle": "string | null",
   "price": "string | null",
-  "seller": "string | null",
-  "brand": "string | null",
-  "productType": "string | null"
+  "seller": "string | null"
 }`;
+
     const extractResp = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [{ role: "user", content: extractPrompt }],
     });
+
     const pageData = safeJSONParse(
       extractResp.choices[0].message.content,
       {}
     );
 
-    /* -------- AI #2: WEBSITE TRUST -------- */
+    /* -------- AI #2: Website trust -------- */
     const trustPrompt = `
-Evaluate website trustworthiness (1–5).
+Evaluate website trustworthiness from technical signals only.
+Do NOT use reviews.
 
-Rules:
-- Do NOT use product reviews
-- Conservative
-- JSON only
-
-Website:
+Website data:
 ${JSON.stringify(domainSignals)}
 
-URL:
-${url}
-
-Respond:
+Respond JSON:
 {
   "trustScore": 1 | 2 | 3 | 4 | 5,
   "confidence": "high" | "medium" | "low",
-  "reasoning": "string",
-  "riskFactors": ["string"]
+  "reasoning": "string"
 }`;
+
     const trustResp = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [{ role: "user", content: trustPrompt }],
     });
+
     const siteTrust = safeJSONParse(
       trustResp.choices[0].message.content,
       {}
@@ -172,15 +152,21 @@ Respond:
 
     return new Response(
       JSON.stringify({
-        website: siteTrust,
-        product: pageData,
+        aiResult: {
+          websiteTrustScore: siteTrust.trustScore || 3,
+          websiteReasoning: siteTrust.reasoning || "Insufficient data.",
+          websiteConfidence: siteTrust.confidence || "low",
+          productTitle: pageData.productTitle || null,
+          price: pageData.price || null,
+          seller: pageData.seller || null,
+        },
       }),
       { status: 200 }
     );
   } catch (err) {
     console.error("API ERROR:", err);
     return new Response(
-      JSON.stringify({ error: err.message || "Server error" }),
+      JSON.stringify({ error: "Server error" }),
       { status: 500 }
     );
   }
