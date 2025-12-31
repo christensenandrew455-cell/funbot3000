@@ -57,7 +57,19 @@ export default function ResultsClient() {
 
   return (
     <div style={{ padding: 24, maxWidth: 600, margin: "0 auto" }}>
-      <h1>Product Link Review AI</h1>
+      {/* Clickable header/logo */}
+      <h1
+        style={{
+          cursor: "pointer",
+          textAlign: "center",
+          marginBottom: 24,
+          fontSize: 28,
+          fontWeight: 700,
+        }}
+        onClick={() => (window.location.href = "/")}
+      >
+        Product Link Analyzer
+      </h1>
 
       <input
         type="url"
@@ -135,15 +147,30 @@ export default function ResultsClient() {
           {aiResult.status === "bad" && aiResult.alternative && (
             <p style={{ marginTop: 16 }}>
               <strong>Alternative:</strong>{" "}
-              <a
-                href={aiResult.alternative}
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a href={aiResult.alternative} target="_blank" rel="noreferrer">
                 {aiResult.alternative}
               </a>
             </p>
           )}
+
+          {/* Drop Link Button */}
+          <div style={{ marginTop: 24, textAlign: "center" }}>
+            <button
+              onClick={() => (window.location.href = "/")}
+              style={{
+                fontSize: 16,
+                fontWeight: 600,
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              <span style={{ color: "#000" }}>Drop </span>
+              <span style={{ color: "#3B82F6", textDecoration: "underline" }}>
+                Link
+              </span>
+            </button>
+          </div>
         </div>
       )}
     </div>
