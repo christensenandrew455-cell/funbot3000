@@ -61,7 +61,7 @@ export default function Home() {
       <div style={styles.card}>
         {/* Clickable logo/header */}
         <h1
-          style={styles.title + "; cursor: pointer;"}
+          style={{ ...styles.title, cursor: "pointer" }}
           onClick={() => window.location.reload()}
         >
           Product Link Analyzer
@@ -120,7 +120,7 @@ export default function Home() {
               <p>{result.overall.reason}</p>
             </div>
 
-            {/* Optional: Drop Link Button */}
+            {/* Drop Link button */}
             <div style={{ marginTop: 24, textAlign: "center" }}>
               <button
                 onClick={() => window.location.reload()}
