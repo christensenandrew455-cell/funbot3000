@@ -26,7 +26,7 @@ function getDomain(url) {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
   } catch {
-    return null;
+    return "unknown";
   }
 }
 
@@ -42,6 +42,7 @@ async function getDomainSignals(domain) {
 
     const created =
       data.creationDate || data.createdDate || data.registeredDate || null;
+
     const createdAt = created ? new Date(created) : null;
     const ageDays = createdAt
       ? Math.floor((Date.now() - createdAt.getTime()) / 86400000)
@@ -53,11 +54,11 @@ async function getDomainSignals(domain) {
       registrar: data.registrar || null,
     };
   } catch {
-    return { domain, ageDays: null, registrar: null, whoisFailed: true };
+    return { domain, ageDays: null, registrar: null };
   }
 }
 
-/* ----------------- JSDOM SCRAPER ----------------- */
+/* ----------------- SCRAPER ----------------- */
 async function scrapeWithJsdom(url) {
   const res = await fetch(url, {
     headers: {
@@ -67,18 +68,16 @@ async function scrapeWithJsdom(url) {
     },
   });
 
-  if (!res.ok) throw new Error(`Fetch failed ${res.status}`);
+  if (!res.ok) throw new Error("Fetch failed");
 
   const html = await res.text();
   const dom = new JSDOM(html);
   const { document } = dom.window;
 
-  // Visible text
   const visibleText =
     document.body?.textContent?.replace(/\s+/g, " ").trim().slice(0, 6000) ||
     "";
 
-  // Meta tags
   const meta = {};
   document.querySelectorAll("meta").forEach((m) => {
     const name = m.getAttribute("property") || m.getAttribute("name");
@@ -86,7 +85,6 @@ async function scrapeWithJsdom(url) {
     if (name && content) meta[name] = content;
   });
 
-  // JSON-LD
   const jsonLd = [];
   document
     .querySelectorAll('script[type="application/ld+json"]')
@@ -96,107 +94,82 @@ async function scrapeWithJsdom(url) {
       } catch {}
     });
 
-  // Inline JSON
-  const inlineJSON = [];
-  document.querySelectorAll("script").forEach((s) => {
-    const text = s.textContent?.trim();
-    if (text && (text.startsWith("{") || text.startsWith("window")) && text.length > 200) {
-      inlineJSON.push(text.slice(0, 2000));
-    }
-  });
-
-  return { visibleText, meta, jsonLd, inlineJSON };
+  return { visibleText, meta, jsonLd };
 }
 
-/* ----------------- API HANDLER ----------------- */
+/* ----------------- API ----------------- */
 export async function POST(req) {
   try {
     const { url } = await req.json();
-    if (!url) return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
+    if (!url) {
+      return new Response(JSON.stringify({ error: "Missing URL" }), {
+        status: 400,
+      });
+    }
 
-    const domain = getDomain(url) || "unknown";
+    const domain = getDomain(url);
     const domainSignals = await getDomainSignals(domain);
     const scraped = await scrapeWithJsdom(url);
 
-    // -------- GPT: Extract product data --------
-    const extractPrompt = `
-Extract factual product data. Use structured data if available. No guessing. JSON only.
+    /* ---------- GPT: FULL STRUCTURED EVAL ---------- */
+    const evalPrompt = `
+You are a product trust analysis system.
 
-Meta tags:
-${JSON.stringify(scraped.meta)}
+Use ONLY the provided data. No reviews. No guessing.
+Be strict. Scores must be 1–5.
 
-JSON-LD:
-${JSON.stringify(scraped.jsonLd)}
-
-Inline JSON:
-${JSON.stringify(scraped.inlineJSON)}
-
-Visible text:
-"""${scraped.visibleText}"""
-
-Respond:
-{
-  "productTitle": "string | null",
-  "price": "string | null",
-  "seller": "string | null",
-  "brand": "string | null"
-}`;
-
-    const extractResp = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [{ role: "user", content: extractPrompt }],
-    });
-
-    const pageData = safeJSONParse(extractResp.choices[0].message.content, {});
-
-    // -------- GPT: Evaluate website trust --------
-    const trustPrompt = `
-Evaluate website trustworthiness from technical signals only. Do NOT use reviews. JSON only.
-
-Website data:
+Domain signals:
 ${JSON.stringify(domainSignals)}
 
-Respond JSON:
+Meta data:
+${JSON.stringify(scraped.meta)}
+
+Structured data:
+${JSON.stringify(scraped.jsonLd)}
+
+Visible page text:
+"""${scraped.visibleText}"""
+
+Return JSON only:
+
 {
-  "trustScore": 1 | 2 | 3 | 4 | 5,
-  "confidence": "high" | "medium" | "low",
-  "reasoning": "string"
-}`;
-
-    const trustResp = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [{ role: "user", content: trustPrompt }],
-    });
-
-    const siteTrust = safeJSONParse(trustResp.choices[0].message.content, {});
-
-    // -------- GPT: Generate full evaluation --------
-    const evalPrompt = `
-Given the following product and website data, classify the product as "good" or "bad". Provide a short review, a seller trust rating, confidence level, and an alternative product if bad. Respond in JSON only.
-
-Product:
-${JSON.stringify(pageData)}
-
-Website:
-${JSON.stringify(siteTrust)}
-
-Respond:
-{
+  "title": "string | null",
   "status": "good" | "bad",
-  "review": "string",
-  "sellerTrust": "string",
-  "confidence": "high" | "medium" | "low",
-  "alternative": "string | null",
-  "title": "string | null"
+
+  "websiteTrust": {
+    "score": 1 | 2 | 3 | 4 | 5,
+    "reason": "string"
+  },
+
+  "sellerTrust": {
+    "score": 1 | 2 | 3 | 4 | 5,
+    "reason": "string"
+  },
+
+  "productTrust": {
+    "score": 1 | 2 | 3 | 4 | 5,
+    "reason": "string"
+  },
+
+  "overall": {
+    "score": 1 | 2 | 3 | 4 | 5,
+    "reason": "string"
+  },
+
+  "alternative": "string | null"
 }
 `;
 
-    const evalResp = await openai.chat.completions.create({
+    const gptResp = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [{ role: "user", content: evalPrompt }],
+      temperature: 0.2,
     });
 
-    const evaluation = safeJSONParse(evalResp.choices[0].message.content, {});
+    const evaluation = safeJSONParse(
+      gptResp.choices[0].message.content,
+      {}
+    );
 
     return new Response(
       JSON.stringify({ aiResult: evaluation }),
@@ -205,9 +178,8 @@ Respond:
   } catch (err) {
     console.error("API ERROR:", err);
     return new Response(
-      JSON.stringify({ error: err.message || "Server error" }),
+      JSON.stringify({ error: "Server error" }),
       { status: 500 }
     );
   }
 }
-
