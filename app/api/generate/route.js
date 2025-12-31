@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 
 import { OpenAI } from "openai";
 import whois from "whois-json";
-import { chromium } from "playwright";
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /* ----------------- helpers ----------------- */
@@ -29,11 +29,16 @@ function getDomain(url) {
   }
 }
 
+/* ----------------- DOMAIN SIGNALS ----------------- */
+
 async function getDomainSignals(domain) {
   try {
     const data = await whois(domain);
     const created =
-      data.creationDate || data.createdDate || data.registeredDate || null;
+      data.creationDate ||
+      data.createdDate ||
+      data.registeredDate ||
+      null;
 
     const createdAt = created ? new Date(created) : null;
     const ageDays = createdAt
@@ -50,55 +55,28 @@ async function getDomainSignals(domain) {
   }
 }
 
-/* ----------------- PLAYWRIGHT SCRAPER ----------------- */
+/* ----------------- STATIC FETCH (NO PLAYWRIGHT) ----------------- */
 
-async function scrapeWithPlaywright(url) {
-  const browser = await chromium.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"]
+async function fetchPageText(url) {
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
   });
 
-  const page = await browser.newPage({
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120",
-  });
+  const html = await res.text();
 
-  try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+  const text = html
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
+    .replace(/<noscript[\s\S]*?>[\s\S]*?<\/noscript>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
-    // scroll to load lazy content (reviews)
-    for (let i = 0; i < 3; i++) {
-      await page.mouse.wheel(0, 2000);
-      await page.waitForTimeout(1200);
-    }
-
-    const pageText = await page.evaluate(() => {
-      document.querySelectorAll("script, style, noscript").forEach(el => el.remove());
-      return document.body?.innerText || "";
-    });
-
-    const reviewText = await page.evaluate(() => {
-      const nodes = Array.from(
-        document.querySelectorAll(
-          '[class*="review"], [id*="review"], [class*="rating"], [data-review]'
-        )
-      );
-      return nodes
-        .map(n => n.innerText)
-        .filter(t => t && t.length > 50)
-        .join(" ");
-    });
-
-    await browser.close();
-
-    return {
-      pageText: pageText.slice(0, 8000),
-      reviewText: reviewText.slice(0, 8000) || null,
-    };
-  } catch (err) {
-    await browser.close();
-    throw err;
-  }
+  return text.slice(0, 9000);
 }
 
 /* ----------------- API HANDLER ----------------- */
@@ -106,21 +84,23 @@ async function scrapeWithPlaywright(url) {
 export async function POST(req) {
   try {
     const { url } = await req.json();
-    if (!url)
-      return new Response(JSON.stringify({ error: "Missing URL" }), {
-        status: 400,
-      });
+    if (!url) {
+      return new Response(
+        JSON.stringify({ error: "Missing URL" }),
+        { status: 400 }
+      );
+    }
 
     const domain = getDomain(url) || "unknown";
     const domainSignals = await getDomainSignals(domain);
+    const pageText = await fetchPageText(url);
 
-    const { pageText, reviewText } = await scrapeWithPlaywright(url);
-
-    /* -------- AI #1: Page parsing -------- */
+    /* -------- AI #1: PAGE EXTRACTION -------- */
     let pageData = {};
-    if (pageText) {
+    {
       const prompt = `
-Extract structured product data.
+Extract factual on-page product data.
+
 Rules:
 - No guessing
 - JSON only
@@ -134,6 +114,7 @@ Respond:
   "productTitle": "string | null",
   "price": "string | null",
   "seller": "string | null",
+  "brand": "string | null",
   "productType": "string | null"
 }`;
       const r = await openai.chat.completions.create({
@@ -143,109 +124,154 @@ Respond:
       pageData = safeJSONParse(r.choices[0].message.content, {});
     }
 
-    /* -------- AI #2: Review analysis -------- */
-    let reviewAnalysis = {};
-    if (reviewText) {
+    /* -------- AI #2: WEBSITE TRUST (1–5) -------- */
+    let siteTrust = {};
+    {
       const prompt = `
-Analyze product reviews.
+You are evaluating WEBSITE TRUSTWORTHINESS.
+
 Rules:
+- Do NOT use product reviews
+- Consider:
+  - Domain age
+  - Registrar
+  - Platform reputation (Amazon, etc.)
+  - Presence of third-party sellers
 - Conservative
-- No guessing
 - JSON only
 
-Reviews:
-"""${reviewText}"""
+Website:
+${JSON.stringify(domainSignals)}
+
+URL:
+${url}
 
 Respond:
 {
-  "reviewQuality": "high" | "medium" | "low",
-  "aiGeneratedLikelihood": "low" | "medium" | "high",
-  "redFlags": ["string"],
-  "summary": "string"
+  "trustScore": 1 | 2 | 3 | 4 | 5,
+  "confidence": "high" | "medium" | "low",
+  "reasoning": "string",
+  "riskFactors": ["string"]
 }`;
       const r = await openai.chat.completions.create({
         model: "gpt-4.1-mini",
         messages: [{ role: "user", content: prompt }],
       });
-      reviewAnalysis = safeJSONParse(r.choices[0].message.content, {});
+      siteTrust = safeJSONParse(r.choices[0].message.content, {});
     }
 
-    /* -------- AI #3: Seller name pattern -------- */
-    let sellerAnalysis = {};
-    if (pageData?.seller) {
+    /* -------- AI #3: SELLER CLARITY -------- */
+    let sellerAssessment = {};
+    {
       const prompt = `
-Analyze seller name pattern only (NOT reputation).
+Assess seller clarity ONLY.
 
-Seller: "${pageData.seller}"
-Domain: ${domain}
+Rules:
+- No reputation guessing
+- Missing or generic sellers increase risk
+- JSON only
 
-Respond JSON:
+Seller:
+"${pageData?.seller || "none"}"
+
+Respond:
 {
-  "nameLooksLegit": true | false,
-  "nameType": "brand" | "individual" | "random" | "unknown",
-  "redFlags": ["string"]
+  "sellerFound": true | false,
+  "sellerClarity": "clear" | "unclear" | "missing",
+  "riskContribution": "low" | "medium" | "high",
+  "notes": "string"
 }`;
       const r = await openai.chat.completions.create({
         model: "gpt-4.1-mini",
         messages: [{ role: "user", content: prompt }],
       });
-      sellerAnalysis = safeJSONParse(r.choices[0].message.content, {});
+      sellerAssessment = safeJSONParse(r.choices[0].message.content, {});
     }
 
-    /* -------- AI #4: Final verdict -------- */
-    const finalPrompt = `
-You are an online shopping risk assessor.
+    /* -------- AI #4: PRODUCT PRICE & QUALITY -------- */
+    let productAssessment = {};
+    {
+      const prompt = `
+Evaluate product price fairness and quality risk.
 
-FACTS:
-Website:
-${JSON.stringify(domainSignals)}
+Rules:
+- Reviews are secondary
+- Be conservative
+- JSON only
 
 Product:
 ${JSON.stringify(pageData)}
 
-Seller pattern:
-${JSON.stringify(sellerAnalysis)}
+Respond:
+{
+  "priceFairness": "cheap" | "fair" | "overpriced" | "unknown",
+  "qualityRisk": "low" | "medium" | "high",
+  "explanation": "string"
+}`;
+      const r = await openai.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [{ role: "user", content: prompt }],
+      });
+      productAssessment = safeJSONParse(r.choices[0].message.content, {});
+    }
 
-Reviews:
-${JSON.stringify(reviewAnalysis)}
+    /* -------- AI #5: FINAL VERDICT -------- */
+    let finalDecision = {};
+    {
+      const prompt = `
+You are an online shopping risk evaluator.
 
 Rules:
-- Conservative
-- Safety first
+- Website trust is primary
+- Seller clarity affects site trust
+- Product quality affects recommendation
+- Prefer SAME WEBSITE alternatives if needed
 - JSON only
+
+Website Trust:
+${JSON.stringify(siteTrust)}
+
+Seller:
+${JSON.stringify(sellerAssessment)}
+
+Product:
+${JSON.stringify(productAssessment)}
 
 Respond:
 {
-  "verdict": "low_risk" | "medium_risk" | "high_risk",
+  "overallRisk": "low" | "medium" | "high",
   "confidence": "high" | "medium" | "low",
   "summary": "string",
-  "recommendedAlternative": "string | null"
+  "recommendedAction": "buy" | "buy_but_caution" | "avoid",
+  "alternativeSuggestion":
+    "same_site_better_seller" |
+    "same_site_similar_product" |
+    "different_site" |
+    null
 }`;
-    const finalResp = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [{ role: "user", content: finalPrompt }],
-    });
+      const r = await openai.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [{ role: "user", content: prompt }],
+      });
+      finalDecision = safeJSONParse(r.choices[0].message.content, {});
+    }
 
-    const finalDecision = safeJSONParse(
-      finalResp.choices[0].message.content,
-      {}
+    /* -------- RESPONSE -------- */
+
+    return new Response(
+      JSON.stringify({
+        websiteTrust: siteTrust,
+        seller: sellerAssessment,
+        product: productAssessment,
+        verdict: finalDecision,
+      }),
+      { status: 200 }
     );
-
-    const aiResult = {
-      status: finalDecision.verdict === "low_risk" ? "good" : "bad",
-      review: finalDecision.summary || "Insufficient data.",
-      title: pageData.productTitle || "Unknown product",
-      sellerTrust:
-        sellerAnalysis?.nameLooksLegit === false ? "Suspicious" : "Unclear",
-      confidence: finalDecision.confidence || "low",
-      alternative: finalDecision.recommendedAlternative || null,
-    };
-
-    return new Response(JSON.stringify({ aiResult }), { status: 200 });
   } catch (err) {
     console.error(err);
-    return new Response(JSON.stringify({ error: "Server error" }), {
-      status: 500,
-    });
+    return new Response(
+      JSON.stringify({ error: "Server error" }),
+      { status: 500 }
+    );
   }
 }
