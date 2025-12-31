@@ -74,10 +74,7 @@ async function scrapeWithJsdom(url) {
   const dom = new JSDOM(html);
   const { document } = dom.window;
 
-  const visibleText =
-    document.body?.textContent?.replace(/\s+/g, " ").trim().slice(0, 6000) ||
-    "";
-
+  /* --------- META --------- */
   const meta = {};
   document.querySelectorAll("meta").forEach((m) => {
     const name = m.getAttribute("property") || m.getAttribute("name");
@@ -85,16 +82,71 @@ async function scrapeWithJsdom(url) {
     if (name && content) meta[name] = content;
   });
 
-  const jsonLd = [];
+  /* --------- JSON-LD (Product only) --------- */
+  const jsonLdProducts = [];
   document
     .querySelectorAll('script[type="application/ld+json"]')
     .forEach((s) => {
       try {
-        jsonLd.push(JSON.parse(s.textContent));
+        const parsed = JSON.parse(s.textContent);
+
+        if (parsed["@type"] === "Product") {
+          jsonLdProducts.push(parsed);
+        }
+
+        if (Array.isArray(parsed["@graph"])) {
+          parsed["@graph"].forEach((n) => {
+            if (n["@type"] === "Product") {
+              jsonLdProducts.push(n);
+            }
+          });
+        }
       } catch {}
     });
 
-  return { visibleText, meta, jsonLd };
+  /* --------- DOM SIGNALS (CRITICAL) --------- */
+  const productSignals = {
+    title:
+      document.querySelector("h1")?.textContent?.trim() ||
+      meta["og:title"] ||
+      null,
+
+    price:
+      document.querySelector('[itemprop="price"]')?.getAttribute("content") ||
+      document.querySelector('[class*="price"]')?.textContent?.trim() ||
+      meta["product:price:amount"] ||
+      null,
+
+    currency:
+      document.querySelector('[itemprop="priceCurrency"]')?.getAttribute("content") ||
+      meta["product:price:currency"] ||
+      null,
+
+    seller:
+      document.querySelector('[itemprop="seller"]')?.textContent?.trim() ||
+      document.querySelector('[class*="seller"]')?.textContent?.trim() ||
+      null,
+
+    brand:
+      document.querySelector('[itemprop="brand"]')?.textContent?.trim() ||
+      null,
+
+    rating:
+      document.querySelector('[itemprop="ratingValue"]')?.getAttribute("content") ||
+      document.querySelector('[class*="rating"]')?.textContent?.match(/\d+(\.\d+)?/)?.[0] ||
+      null,
+
+    reviewCount:
+      document.querySelector('[itemprop="reviewCount"]')?.getAttribute("content") ||
+      document.querySelector('[class*="review"]')?.textContent?.match(/\d[\d,]*/)?.[0] ||
+      null,
+  };
+
+  return {
+    meta,
+    jsonLdProducts,
+    productSignals,
+  };
 }
 
 /* ----------------- API ----------------- */
@@ -111,51 +163,42 @@ export async function POST(req) {
     const domainSignals = await getDomainSignals(domain);
     const scraped = await scrapeWithJsdom(url);
 
-    /* ---------- GPT: FULL STRUCTURED EVAL ---------- */
+    /* ---------- GPT: STRICT SELECTION ---------- */
     const evalPrompt = `
-You are a product trust analysis system.
+You are selecting factual product data.
+NO guessing. NO reviews text.
 
-Use ONLY the provided data. No reviews. No guessing.
-Be strict. Scores must be 1–5.
+Priority:
+1) JSON-LD Product
+2) DOM signals
+3) Meta
 
-Domain signals:
+Inputs:
+
+Domain:
 ${JSON.stringify(domainSignals)}
 
-Meta data:
-${JSON.stringify(scraped.meta)}
+Product JSON-LD:
+${JSON.stringify(scraped.jsonLdProducts)}
 
-Structured data:
-${JSON.stringify(scraped.jsonLd)}
-
-Visible page text:
-"""${scraped.visibleText}"""
+DOM signals:
+${JSON.stringify(scraped.productSignals)}
 
 Return JSON only:
 
 {
   "title": "string | null",
+  "price": "string | null",
+  "seller": "string | null",
+  "rating": "string | null",
+  "reviewCount": "string | null",
+
+  "websiteTrust": { "score": 1 | 2 | 3 | 4 | 5, "reason": "string" },
+  "sellerTrust": { "score": 1 | 2 | 3 | 4 | 5, "reason": "string" },
+  "productTrust": { "score": 1 | 2 | 3 | 4 | 5, "reason": "string" },
+  "overall": { "score": 1 | 2 | 3 | 4 | 5, "reason": "string" },
+
   "status": "good" | "bad",
-
-  "websiteTrust": {
-    "score": 1 | 2 | 3 | 4 | 5,
-    "reason": "string"
-  },
-
-  "sellerTrust": {
-    "score": 1 | 2 | 3 | 4 | 5,
-    "reason": "string"
-  },
-
-  "productTrust": {
-    "score": 1 | 2 | 3 | 4 | 5,
-    "reason": "string"
-  },
-
-  "overall": {
-    "score": 1 | 2 | 3 | 4 | 5,
-    "reason": "string"
-  },
-
   "alternative": "string | null"
 }
 `;
@@ -163,7 +206,7 @@ Return JSON only:
     const gptResp = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [{ role: "user", content: evalPrompt }],
-      temperature: 0.2,
+      temperature: 0.1,
     });
 
     const evaluation = safeJSONParse(
@@ -171,10 +214,9 @@ Return JSON only:
       {}
     );
 
-    return new Response(
-      JSON.stringify({ aiResult: evaluation }),
-      { status: 200 }
-    );
+    return new Response(JSON.stringify({ aiResult: evaluation }), {
+      status: 200,
+    });
   } catch (err) {
     console.error("API ERROR:", err);
     return new Response(
