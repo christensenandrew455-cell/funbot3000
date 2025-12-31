@@ -55,8 +55,32 @@ export default function ResultsClient() {
     }
   }
 
+  function handleDropLinkClick() {
+    window.location.href = "/";
+  }
+
   return (
-    <div style={{ padding: 24, maxWidth: 600, margin: "0 auto" }}>
+    <div style={{ padding: 24, maxWidth: 600, margin: "0 auto", position: "relative" }}>
+      {/* Drop Link Button top-left */}
+      {aiResult && (
+        <button
+          onClick={handleDropLinkClick}
+          style={{
+            position: "absolute",
+            top: 16,
+            left: 16,
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            fontSize: 16,
+            fontWeight: 600,
+          }}
+        >
+          <span style={{ color: "#000" }}>Drop </span>
+          <span style={{ color: "#3B82F6", textDecoration: "underline" }}>Link</span>
+        </button>
+      )}
+
       {/* Clickable header/logo */}
       <h1
         style={{
@@ -66,7 +90,7 @@ export default function ResultsClient() {
           fontSize: 28,
           fontWeight: 700,
         }}
-        onClick={() => (window.location.href = "/")}
+        onClick={handleDropLinkClick}
       >
         Product Link Analyzer
       </h1>
@@ -152,25 +176,6 @@ export default function ResultsClient() {
               </a>
             </p>
           )}
-
-          {/* Drop Link Button */}
-          <div style={{ marginTop: 24, textAlign: "center" }}>
-            <button
-              onClick={() => (window.location.href = "/")}
-              style={{
-                fontSize: 16,
-                fontWeight: 600,
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
-              <span style={{ color: "#000" }}>Drop </span>
-              <span style={{ color: "#3B82F6", textDecoration: "underline" }}>
-                Link
-              </span>
-            </button>
-          </div>
         </div>
       )}
     </div>
