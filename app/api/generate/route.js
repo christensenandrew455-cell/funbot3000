@@ -6,6 +6,7 @@ import fetch from "node-fetch";
 import { JSDOM } from "jsdom";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const BRAVE_API_KEY = process.env.BRAVE_API_KEY; // get your free Brave Search API key
 
 /* ----------------- helpers ----------------- */
 function safeJSONParse(text, fallback = {}) {
@@ -74,7 +75,6 @@ async function scrapeWithJsdom(url) {
   const dom = new JSDOM(html);
   const { document } = dom.window;
 
-  /* --------- META --------- */
   const meta = {};
   document.querySelectorAll("meta").forEach((m) => {
     const name = m.getAttribute("property") || m.getAttribute("name");
@@ -82,122 +82,90 @@ async function scrapeWithJsdom(url) {
     if (name && content) meta[name] = content;
   });
 
-  /* --------- JSON-LD (Product only) --------- */
   const jsonLdProducts = [];
-  document
-    .querySelectorAll('script[type="application/ld+json"]')
-    .forEach((s) => {
-      try {
-        const parsed = JSON.parse(s.textContent);
+  document.querySelectorAll('script[type="application/ld+json"]').forEach((s) => {
+    try {
+      const parsed = JSON.parse(s.textContent);
+      if (parsed["@type"] === "Product") jsonLdProducts.push(parsed);
+      if (Array.isArray(parsed["@graph"]))
+        parsed["@graph"].forEach((n) => {
+          if (n["@type"] === "Product") jsonLdProducts.push(n);
+        });
+    } catch {}
+  });
 
-        if (parsed["@type"] === "Product") {
-          jsonLdProducts.push(parsed);
-        }
-
-        if (Array.isArray(parsed["@graph"])) {
-          parsed["@graph"].forEach((n) => {
-            if (n["@type"] === "Product") {
-              jsonLdProducts.push(n);
-            }
-          });
-        }
-      } catch {}
-    });
-
-  /* --------- DOM SIGNALS (CRITICAL) --------- */
   const productSignals = {
     title:
       document.querySelector("h1")?.textContent?.trim() ||
       meta["og:title"] ||
       null,
-
     price:
       document.querySelector('[itemprop="price"]')?.getAttribute("content") ||
       document.querySelector('[class*="price"]')?.textContent?.trim() ||
       meta["product:price:amount"] ||
       null,
-
     currency:
       document.querySelector('[itemprop="priceCurrency"]')?.getAttribute("content") ||
       meta["product:price:currency"] ||
       null,
-
     seller:
       document.querySelector('[itemprop="seller"]')?.textContent?.trim() ||
       document.querySelector('[class*="seller"]')?.textContent?.trim() ||
       null,
-
-    brand:
-      document.querySelector('[itemprop="brand"]')?.textContent?.trim() ||
-      null,
-
-    rating:
-      document.querySelector('[itemprop="ratingValue"]')?.getAttribute("content") ||
-      document.querySelector('[class*="rating"]')?.textContent?.match(/\d+(\.\d+)?/)?.[0] ||
-      null,
-
-    reviewCount:
-      document.querySelector('[itemprop="reviewCount"]')?.getAttribute("content") ||
-      document.querySelector('[class*="review"]')?.textContent?.match(/\d[\d,]*/)?.[0] ||
-      null,
   };
 
-  return {
-    meta,
-    jsonLdProducts,
-    productSignals,
-  };
+  return { meta, jsonLdProducts, productSignals };
+}
+
+/* ----------------- BRAVE SEARCH ----------------- */
+async function braveSearch(query) {
+  if (!query) return [];
+  const res = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&size=3`, {
+    headers: {
+      "Accept": "application/json",
+      "X-Subscription-Token": BRAVE_API_KEY,
+    },
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data?.results || [];
 }
 
 /* ----------------- API ----------------- */
 export async function POST(req) {
   try {
     const { url } = await req.json();
-    if (!url) {
-      return new Response(JSON.stringify({ error: "Missing URL" }), {
-        status: 400,
-      });
-    }
+    if (!url) return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
 
     const domain = getDomain(url);
     const domainSignals = await getDomainSignals(domain);
     const scraped = await scrapeWithJsdom(url);
 
-    /* ---------- GPT: STRICT SELECTION ---------- */
-    const evalPrompt = `
-You are selecting factual product data.
-NO guessing. NO reviews text.
+    // Brave search results
+    const productSearchResults = await braveSearch(scraped.productSignals.title);
+    const sellerSearchResults = await braveSearch(scraped.productSignals.seller);
 
-Priority:
-1) JSON-LD Product
-2) DOM signals
-3) Meta
+    const evalPrompt = `
+You are a product trust analysis system.
+Use ONLY the provided data. No guessing.
 
 Inputs:
+- Domain signals: ${JSON.stringify(domainSignals)}
+- Page data: ${JSON.stringify(scraped)}
+- Product search results: ${JSON.stringify(productSearchResults)}
+- Seller search results: ${JSON.stringify(sellerSearchResults)}
 
-Domain:
-${JSON.stringify(domainSignals)}
-
-Product JSON-LD:
-${JSON.stringify(scraped.jsonLdProducts)}
-
-DOM signals:
-${JSON.stringify(scraped.productSignals)}
-
-Return JSON only:
-
+Return JSON only with:
 {
   "title": "string | null",
   "price": "string | null",
   "seller": "string | null",
   "rating": "string | null",
   "reviewCount": "string | null",
-
   "websiteTrust": { "score": 1 | 2 | 3 | 4 | 5, "reason": "string" },
   "sellerTrust": { "score": 1 | 2 | 3 | 4 | 5, "reason": "string" },
   "productTrust": { "score": 1 | 2 | 3 | 4 | 5, "reason": "string" },
   "overall": { "score": 1 | 2 | 3 | 4 | 5, "reason": "string" },
-
   "status": "good" | "bad",
   "alternative": "string | null"
 }
@@ -209,19 +177,10 @@ Return JSON only:
       temperature: 0.1,
     });
 
-    const evaluation = safeJSONParse(
-      gptResp.choices[0].message.content,
-      {}
-    );
-
-    return new Response(JSON.stringify({ aiResult: evaluation }), {
-      status: 200,
-    });
+    const evaluation = safeJSONParse(gptResp.choices[0].message.content, {});
+    return new Response(JSON.stringify({ aiResult: evaluation }), { status: 200 });
   } catch (err) {
     console.error("API ERROR:", err);
-    return new Response(
-      JSON.stringify({ error: "Server error" }),
-      { status: 500 }
-    );
+    return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
   }
 }
