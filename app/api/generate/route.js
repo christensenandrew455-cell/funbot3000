@@ -8,7 +8,6 @@ import { JSDOM } from "jsdom";
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /* ----------------- helpers ----------------- */
-
 function safeJSONParse(text, fallback = {}) {
   if (!text) return fallback;
   try {
@@ -32,22 +31,17 @@ function getDomain(url) {
 }
 
 /* ----------------- DOMAIN SIGNALS ----------------- */
-
 async function getDomainSignals(domain) {
   try {
     const data = await Promise.race([
       whois(domain),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("WHOIS timeout")), 3000)
+        setTimeout(() => reject(new Error("WHOIS timeout")), 5000)
       ),
     ]);
 
     const created =
-      data.creationDate ||
-      data.createdDate ||
-      data.registeredDate ||
-      null;
-
+      data.creationDate || data.createdDate || data.registeredDate || null;
     const createdAt = created ? new Date(created) : null;
     const ageDays = createdAt
       ? Math.floor((Date.now() - createdAt.getTime()) / 86400000)
@@ -59,17 +53,11 @@ async function getDomainSignals(domain) {
       registrar: data.registrar || null,
     };
   } catch {
-    return {
-      domain,
-      ageDays: null,
-      registrar: null,
-      whoisFailed: true,
-    };
+    return { domain, ageDays: null, registrar: null, whoisFailed: true };
   }
 }
 
 /* ----------------- JSDOM SCRAPER ----------------- */
-
 async function scrapeWithJsdom(url) {
   const res = await fetch(url, {
     headers: {
@@ -85,13 +73,12 @@ async function scrapeWithJsdom(url) {
   const dom = new JSDOM(html);
   const { document } = dom.window;
 
-  // 1. Visible text
-  const visibleText = document.body?.textContent
-    ?.replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 6000) || "";
+  // Visible text
+  const visibleText =
+    document.body?.textContent?.replace(/\s+/g, " ").trim().slice(0, 6000) ||
+    "";
 
-  // 2. Meta tags
+  // Meta tags
   const meta = {};
   document.querySelectorAll("meta").forEach((m) => {
     const name = m.getAttribute("property") || m.getAttribute("name");
@@ -99,7 +86,7 @@ async function scrapeWithJsdom(url) {
     if (name && content) meta[name] = content;
   });
 
-  // 3. JSON-LD
+  // JSON-LD
   const jsonLd = [];
   document
     .querySelectorAll('script[type="application/ld+json"]')
@@ -109,15 +96,11 @@ async function scrapeWithJsdom(url) {
       } catch {}
     });
 
-  // 4. Inline JSON
+  // Inline JSON
   const inlineJSON = [];
   document.querySelectorAll("script").forEach((s) => {
     const text = s.textContent?.trim();
-    if (
-      text &&
-      (text.startsWith("{") || text.startsWith("window")) &&
-      text.length > 200
-    ) {
+    if (text && (text.startsWith("{") || text.startsWith("window")) && text.length > 200) {
       inlineJSON.push(text.slice(0, 2000));
     }
   });
@@ -126,16 +109,10 @@ async function scrapeWithJsdom(url) {
 }
 
 /* ----------------- API HANDLER ----------------- */
-
 export async function POST(req) {
   try {
     const { url } = await req.json();
-    if (!url) {
-      return new Response(
-        JSON.stringify({ error: "Missing URL" }),
-        { status: 400 }
-      );
-    }
+    if (!url) return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
 
     const domain = getDomain(url) || "unknown";
     const domainSignals = await getDomainSignals(domain);
@@ -143,8 +120,7 @@ export async function POST(req) {
 
     // -------- GPT: Extract product data --------
     const extractPrompt = `
-Extract factual product data.
-Use structured data if available. No guessing. JSON only.
+Extract factual product data. Use structured data if available. No guessing. JSON only.
 
 Meta tags:
 ${JSON.stringify(scraped.meta)}
@@ -171,15 +147,11 @@ Respond:
       messages: [{ role: "user", content: extractPrompt }],
     });
 
-    const pageData = safeJSONParse(
-      extractResp.choices[0].message.content,
-      {}
-    );
+    const pageData = safeJSONParse(extractResp.choices[0].message.content, {});
 
     // -------- GPT: Evaluate website trust --------
     const trustPrompt = `
-Evaluate website trustworthiness from technical signals only.
-Do NOT use reviews. JSON only.
+Evaluate website trustworthiness from technical signals only. Do NOT use reviews. JSON only.
 
 Website data:
 ${JSON.stringify(domainSignals)}
@@ -196,24 +168,38 @@ Respond JSON:
       messages: [{ role: "user", content: trustPrompt }],
     });
 
-    const siteTrust = safeJSONParse(
-      trustResp.choices[0].message.content,
-      {}
-    );
+    const siteTrust = safeJSONParse(trustResp.choices[0].message.content, {});
+
+    // -------- GPT: Generate full evaluation --------
+    const evalPrompt = `
+Given the following product and website data, classify the product as "good" or "bad". Provide a short review, a seller trust rating, confidence level, and an alternative product if bad. Respond in JSON only.
+
+Product:
+${JSON.stringify(pageData)}
+
+Website:
+${JSON.stringify(siteTrust)}
+
+Respond:
+{
+  "status": "good" | "bad",
+  "review": "string",
+  "sellerTrust": "string",
+  "confidence": "high" | "medium" | "low",
+  "alternative": "string | null",
+  "title": "string | null"
+}
+`;
+
+    const evalResp = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [{ role: "user", content: evalPrompt }],
+    });
+
+    const evaluation = safeJSONParse(evalResp.choices[0].message.content, {});
 
     return new Response(
-      JSON.stringify({
-        aiResult: {
-          websiteTrustScore: siteTrust.trustScore || 3,
-          websiteReasoning:
-            siteTrust.reasoning || "Insufficient data.",
-          websiteConfidence: siteTrust.confidence || "low",
-          productTitle: pageData.productTitle || null,
-          price: pageData.price || null,
-          seller: pageData.seller || null,
-          brand: pageData.brand || null,
-        },
-      }),
+      JSON.stringify({ aiResult: evaluation }),
       { status: 200 }
     );
   } catch (err) {
@@ -224,3 +210,4 @@ Respond JSON:
     );
   }
 }
+
