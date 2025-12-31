@@ -59,7 +59,13 @@ export default function Home() {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        <h1 style={styles.title}>Product Link Analyzer</h1>
+        {/* Clickable logo/header */}
+        <h1
+          style={styles.title + "; cursor: pointer;"}
+          onClick={() => window.location.reload()}
+        >
+          Product Link Analyzer
+        </h1>
 
         {!result && (
           <form onSubmit={handleSubmit} style={styles.form}>
@@ -106,24 +112,32 @@ export default function Home() {
               <p>{result.productTrust.reason}</p>
             </div>
 
-            <div style={{ ...styles.section, borderTop: "1px solid #eee", paddingTop: 16 }}>
+            <div
+              style={{ ...styles.section, borderTop: "1px solid #eee", paddingTop: 16 }}
+            >
               <h3>Overall Rating</h3>
               <Stars score={result.overall.score} />
               <p>{result.overall.reason}</p>
             </div>
 
-            <form onSubmit={handleSubmit} style={{ marginTop: 32 }}>
-              <input
-                type="url"
-                placeholder="Analyze another product link..."
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                style={styles.input}
-              />
-              <button type="submit" style={styles.button} disabled={loading}>
-                {loading ? "Processing..." : "Analyze Another"}
+            {/* Optional: Drop Link Button */}
+            <div style={{ marginTop: 24, textAlign: "center" }}>
+              <button
+                onClick={() => window.location.reload()}
+                style={{
+                  fontSize: 16,
+                  fontWeight: 600,
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ color: "#000" }}>Drop </span>
+                <span style={{ color: "#3B82F6", textDecoration: "underline" }}>
+                  Link
+                </span>
               </button>
-            </form>
+            </div>
           </>
         )}
       </div>
@@ -171,4 +185,3 @@ const styles = {
   }),
   section: { marginBottom: 18 },
 };
-
