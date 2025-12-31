@@ -8,6 +8,17 @@ function normalizeUrl(input) {
   return `https://${input}`;
 }
 
+function Stars({ score }) {
+  const full = "★".repeat(score);
+  const empty = "☆".repeat(5 - score);
+  return (
+    <span style={{ color: "#f59e0b", fontSize: 18 }}>
+      {full}
+      <span style={{ color: "#d1d5db" }}>{empty}</span>
+    </span>
+  );
+}
+
 export default function Home() {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -54,7 +65,7 @@ export default function Home() {
           <form onSubmit={handleSubmit} style={styles.form}>
             <input
               type="url"
-              placeholder="Enter a product link (Amazon, Walmart, etc.)"
+              placeholder="Enter a product link"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               style={styles.input}
@@ -74,38 +85,37 @@ export default function Home() {
             </div>
 
             <div style={styles.section}>
-              <h3>Summary</h3>
-              <p>{result.review}</p>
+              <h3>{result.title || "Product Title Not Detected"}</h3>
             </div>
 
             <div style={styles.section}>
-              <h3>Title</h3>
-              <p>{result.title || "No title detected"}</p>
+              <h4>Website Trust</h4>
+              <Stars score={result.websiteTrust.score} />
+              <p>{result.websiteTrust.reason}</p>
             </div>
 
             <div style={styles.section}>
-              <h3>Seller Trust</h3>
-              <p>{result.sellerTrust || "Unknown"}</p>
+              <h4>Seller Trust</h4>
+              <Stars score={result.sellerTrust.score} />
+              <p>{result.sellerTrust.reason}</p>
             </div>
 
             <div style={styles.section}>
-              <h3>Confidence</h3>
-              <p>{result.confidence || "Unknown"}</p>
+              <h4>Product Trust</h4>
+              <Stars score={result.productTrust.score} />
+              <p>{result.productTrust.reason}</p>
             </div>
 
-            {result.status === "bad" && result.alternative && (
-              <div style={styles.section}>
-                <h3>Alternative Product</h3>
-                <a href={result.alternative} target="_blank" rel="noreferrer">
-                  {result.alternative}
-                </a>
-              </div>
-            )}
+            <div style={{ ...styles.section, borderTop: "1px solid #eee", paddingTop: 16 }}>
+              <h3>Overall Rating</h3>
+              <Stars score={result.overall.score} />
+              <p>{result.overall.reason}</p>
+            </div>
 
             <form onSubmit={handleSubmit} style={{ marginTop: 32 }}>
               <input
                 type="url"
-                placeholder="Check another product link..."
+                placeholder="Analyze another product link..."
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 style={styles.input}
@@ -135,11 +145,10 @@ const styles = {
     padding: 32,
     borderRadius: 16,
     width: "100%",
-    maxWidth: 520,
+    maxWidth: 540,
     boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
-    textAlign: "center",
   },
-  title: { fontSize: 32, fontWeight: 800, marginBottom: 24 },
+  title: { fontSize: 32, fontWeight: 800, marginBottom: 24, textAlign: "center" },
   form: { display: "flex", flexDirection: "column", gap: 12 },
   input: { padding: 14, fontSize: 16, borderRadius: 10, border: "1px solid #ddd" },
   button: {
@@ -152,12 +161,14 @@ const styles = {
     color: "#fff",
     fontWeight: 600,
   },
-  error: { color: "red", marginTop: 12 },
+  error: { color: "red", marginTop: 12, textAlign: "center" },
   verdict: (status) => ({
-    fontSize: 36,
+    fontSize: 28,
     fontWeight: 900,
     color: status === "good" ? "#16a34a" : "#dc2626",
+    textAlign: "center",
     marginBottom: 24,
   }),
-  section: { textAlign: "left", marginBottom: 16 },
+  section: { marginBottom: 18 },
 };
+
