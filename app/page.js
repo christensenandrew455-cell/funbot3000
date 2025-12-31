@@ -56,16 +56,25 @@ export default function Home() {
     }
   }
 
+  function handleDropLinkClick() {
+    // Reload the page to go back to the home input form
+    window.location.reload();
+  }
+
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        {/* Clickable logo/header */}
-        <h1
-          style={{ ...styles.title, cursor: "pointer" }}
-          onClick={() => window.location.reload()}
-        >
-          Product Link Analyzer
-        </h1>
+        {/* Drop Link button top-left */}
+        {result && (
+          <button onClick={handleDropLinkClick} style={styles.dropLinkButton}>
+            <span style={{ color: "#000" }}>Drop</span>{" "}
+            <span style={{ color: "#4A6CF7", textDecoration: "underline" }}>
+              Link
+            </span>
+          </button>
+        )}
+
+        <h1 style={styles.title}>Product Link Analyzer</h1>
 
         {!result && (
           <form onSubmit={handleSubmit} style={styles.form}>
@@ -113,31 +122,29 @@ export default function Home() {
             </div>
 
             <div
-              style={{ ...styles.section, borderTop: "1px solid #eee", paddingTop: 16 }}
+              style={{
+                ...styles.section,
+                borderTop: "1px solid #eee",
+                paddingTop: 16,
+              }}
             >
               <h3>Overall Rating</h3>
               <Stars score={result.overall.score} />
               <p>{result.overall.reason}</p>
             </div>
 
-            {/* Drop Link button */}
-            <div style={{ marginTop: 24, textAlign: "center" }}>
-              <button
-                onClick={() => window.location.reload()}
-                style={{
-                  fontSize: 16,
-                  fontWeight: 600,
-                  background: "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                }}
-              >
-                <span style={{ color: "#000" }}>Drop </span>
-                <span style={{ color: "#3B82F6", textDecoration: "underline" }}>
-                  Link
-                </span>
+            <form onSubmit={handleSubmit} style={{ marginTop: 32 }}>
+              <input
+                type="url"
+                placeholder="Analyze another product link..."
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                style={styles.input}
+              />
+              <button type="submit" style={styles.button} disabled={loading}>
+                {loading ? "Processing..." : "Analyze Another"}
               </button>
-            </div>
+            </form>
           </>
         )}
       </div>
@@ -155,12 +162,23 @@ const styles = {
     padding: 20,
   },
   card: {
+    position: "relative", // required for top-left button
     background: "#fff",
     padding: 32,
     borderRadius: 16,
     width: "100%",
     maxWidth: 540,
     boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
+  },
+  dropLinkButton: {
+    position: "absolute",
+    top: 16,
+    left: 16,
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    fontSize: 16,
+    fontWeight: 600,
   },
   title: { fontSize: 32, fontWeight: 800, marginBottom: 24, textAlign: "center" },
   form: { display: "flex", flexDirection: "column", gap: 12 },
