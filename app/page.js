@@ -59,11 +59,39 @@ export default function Home() {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
+
+        {/* TOP INSTRUCTIONS */}
+        {!result && (
+          <div style={styles.instructions}>
+            <h1 style={styles.heroTitle}>
+              Found a product that doesn’t look right?
+            </h1>
+            <p style={styles.heroSubtitle}>
+              Drop the product link below and we’ll analyze it for scams, fake quality,
+              and overpriced listings — <strong>free</strong>.
+            </p>
+
+            <div style={styles.steps}>
+              <div style={styles.step}>
+                <strong>1.</strong> Find a product that looks suspicious or overpriced
+              </div>
+              <div style={styles.step}>
+                <strong>2.</strong> Copy the <strong>full product link</strong>  
+                (Ctrl + C on desktop, or tap and copy on mobile)
+              </div>
+              <div style={styles.step}>
+                <strong>3.</strong> Paste it below and press <strong>Analyze</strong>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* INPUT */}
         {!result && (
           <form onSubmit={handleSubmit} style={styles.form}>
             <input
               type="url"
-              placeholder="Enter a product link"
+              placeholder="Paste the full product link here…"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               style={styles.input}
@@ -71,6 +99,9 @@ export default function Home() {
             <button type="submit" style={styles.button} disabled={loading}>
               {loading ? "Processing..." : "Analyze Product"}
             </button>
+            <p style={styles.helperText}>
+              Copy the link from the product page → paste it here → analyze.
+            </p>
           </form>
         )}
 
@@ -139,6 +170,32 @@ const styles = {
     maxWidth: 540,
     boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
   },
+  instructions: {
+    marginBottom: 28,
+    textAlign: "center",
+  },
+  heroTitle: {
+    fontSize: 28,
+    fontWeight: 800,
+    marginBottom: 10,
+  },
+  heroSubtitle: {
+    fontSize: 15,
+    color: "#555",
+    marginBottom: 20,
+  },
+  steps: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+    textAlign: "left",
+    fontSize: 14,
+  },
+  step: {
+    background: "#f9fafb",
+    padding: 10,
+    borderRadius: 8,
+  },
   form: { display: "flex", flexDirection: "column", gap: 12 },
   input: { padding: 14, fontSize: 16, borderRadius: 10, border: "1px solid #ddd" },
   button: {
@@ -150,6 +207,11 @@ const styles = {
     background: "#4A6CF7",
     color: "#fff",
     fontWeight: 600,
+  },
+  helperText: {
+    fontSize: 12,
+    color: "#666",
+    textAlign: "center",
   },
   error: { color: "red", marginTop: 12, textAlign: "center" },
   verdict: (status) => ({
