@@ -3,9 +3,7 @@
 import { useState } from "react";
 
 export default function ResultsClient() {
-  const [url, setUrl] = useState("");
   const [aiResult, setAiResult] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   function renderStars(score) {
@@ -27,90 +25,8 @@ export default function ResultsClient() {
     return <div>{stars}</div>;
   }
 
-  async function fetchAi() {
-    if (!url) {
-      setError("Please enter a product link.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    setAiResult(null);
-
-    try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-
-      if (!res.ok) throw new Error("API request failed");
-      const data = await res.json();
-      setAiResult(data.aiResult);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to generate review.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleDropLinkClick() {
-    window.location.href = "/";
-  }
-
   return (
-    <div style={{ padding: 24, maxWidth: 600, margin: "0 auto", position: "relative" }}>
-      {/* Drop Link Button top-left */}
-      {aiResult && (
-        <button
-          onClick={handleDropLinkClick}
-          style={{
-            position: "absolute",
-            top: 16,
-            left: 16,
-            background: "transparent",
-            border: "none",
-            cursor: "pointer",
-            fontSize: 16,
-            fontWeight: 600,
-          }}
-        >
-          <span style={{ color: "#000" }}>Drop </span>
-          <span style={{ color: "#3B82F6", textDecoration: "underline" }}>Link</span>
-        </button>
-      )}
-
-      {/* Clickable header/logo */}
-      <h1
-        style={{
-          cursor: "pointer",
-          textAlign: "center",
-          marginBottom: 24,
-          fontSize: 28,
-          fontWeight: 700,
-        }}
-        onClick={handleDropLinkClick}
-      >
-        Product Link Analyzer
-      </h1>
-
-      <input
-        type="url"
-        placeholder="https://example-product.com"
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        style={{ padding: 12, width: "100%", marginBottom: 12 }}
-      />
-
-      <button
-        onClick={fetchAi}
-        disabled={loading}
-        style={{ padding: 12, fontSize: 16, marginBottom: 16 }}
-      >
-        {loading ? "Processing..." : "Generate Review"}
-      </button>
-
+    <div style={{ padding: 24, maxWidth: 600, margin: "0 auto" }}>
       {error && <p style={{ color: "red" }}>{error}</p>}
 
       {aiResult && (
