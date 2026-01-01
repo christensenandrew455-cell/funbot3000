@@ -105,6 +105,20 @@ export default function Home() {
           </form>
         )}
 
+        {/* SCAM FACTS BOX */}
+        {!result && (
+          <div style={styles.scamFacts}>
+            <h3 style={{ marginBottom: 12 }}>Did You Know?</h3>
+            <ul style={styles.scamList}>
+              <li>Nearly <strong>1 in 3 shoppers</strong> report being scammed online. (Pew Research)</li>
+              <li>Over <strong>70% of adults</strong> have experienced some kind of online scam. (Pew Research)</li>
+              <li>Third-party sellers and reseller listings can hide overpriced or counterfeit products. (BBB)</li>
+              <li>Up to <strong>35–40%</strong> of product reviews may be fake or manipulated. (VPNRanks)</li>
+              <li>Online shopping fraud costs consumers and businesses billions globally each year. (Capital One Shopping)</li>
+            </ul>
+          </div>
+        )}
+
         {error && <p style={styles.error}>{error}</p>}
 
         {result && (
@@ -212,6 +226,18 @@ const styles = {
     fontSize: 12,
     color: "#666",
     textAlign: "center",
+  },
+  scamFacts: {
+    marginTop: 28,
+    background: "#f3f4f6",
+    padding: 16,
+    borderRadius: 12,
+  },
+  scamList: {
+    listStyle: "disc",
+    paddingLeft: 20,
+    fontSize: 13,
+    color: "#333",
   },
   error: { color: "red", marginTop: 12, textAlign: "center" },
   verdict: (status) => ({
