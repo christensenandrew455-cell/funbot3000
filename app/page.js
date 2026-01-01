@@ -150,7 +150,7 @@ export default function Home() {
       </div>
 
       {/* WHY IT MATTERS CARD - SEPARATE WHITE BOX */}
-      <div style={styles.card}>
+      <div style={styles.cardFacts}>
         <h2 style={styles.factsTitle}>Why It Matters</h2>
         <ul style={styles.factsList}>
           <li>Nearly <strong>1 in 3 shoppers</strong> report being scammed online.</li>
@@ -182,6 +182,15 @@ const styles = {
     width: "100%",
     maxWidth: 540,
     boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
+  },
+  cardFacts: {
+    background: "#fff",
+    padding: 40,        // bigger padding to make card taller
+    borderRadius: 16,
+    width: "100%",
+    maxWidth: 540,
+    boxShadow: "0 12px 36px rgba(0,0,0,0.12)",
+    marginTop: 16,
   },
   instructions: {
     marginBottom: 28,
@@ -227,17 +236,17 @@ const styles = {
     textAlign: "center",
   },
   factsTitle: {
-    fontSize: 22,
+    fontSize: 26,       // bigger
     fontWeight: 700,
-    marginBottom: 16,
+    marginBottom: 24,
     textAlign: "center",
   },
   factsList: {
     listStyle: "disc",
-    paddingLeft: 20,
-    fontSize: 14,
+    paddingLeft: 24,
+    fontSize: 16,       // bigger, easier to read
     color: "#333",
-    lineHeight: 1.6,
+    lineHeight: 2,      // more spacing
   },
   error: { color: "red", marginTop: 12, textAlign: "center" },
   verdict: (status) => ({
