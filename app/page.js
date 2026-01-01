@@ -56,26 +56,9 @@ export default function Home() {
     }
   }
 
-  function handleDropLinkClick() {
-    // Reload the page to go back to the home input form
-    window.location.reload();
-  }
-
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        {/* Drop Link button top-left */}
-        {result && (
-          <button onClick={handleDropLinkClick} style={styles.dropLinkButton}>
-            <span style={{ color: "#000" }}>Drop</span>{" "}
-            <span style={{ color: "#4A6CF7", textDecoration: "underline" }}>
-              Link
-            </span>
-          </button>
-        )}
-
-        <h1 style={styles.title}>Product Link Analyzer</h1>
-
         {!result && (
           <form onSubmit={handleSubmit} style={styles.form}>
             <input
@@ -132,19 +115,6 @@ export default function Home() {
               <Stars score={result.overall.score} />
               <p>{result.overall.reason}</p>
             </div>
-
-            <form onSubmit={handleSubmit} style={{ marginTop: 32 }}>
-              <input
-                type="url"
-                placeholder="Analyze another product link..."
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                style={styles.input}
-              />
-              <button type="submit" style={styles.button} disabled={loading}>
-                {loading ? "Processing..." : "Analyze Another"}
-              </button>
-            </form>
           </>
         )}
       </div>
@@ -162,7 +132,6 @@ const styles = {
     padding: 20,
   },
   card: {
-    position: "relative", // required for top-left button
     background: "#fff",
     padding: 32,
     borderRadius: 16,
@@ -170,17 +139,6 @@ const styles = {
     maxWidth: 540,
     boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
   },
-  dropLinkButton: {
-    position: "absolute",
-    top: 16,
-    left: 16,
-    background: "transparent",
-    border: "none",
-    cursor: "pointer",
-    fontSize: 16,
-    fontWeight: 600,
-  },
-  title: { fontSize: 32, fontWeight: 800, marginBottom: 24, textAlign: "center" },
   form: { display: "flex", flexDirection: "column", gap: 12 },
   input: { padding: 14, fontSize: 16, borderRadius: 10, border: "1px solid #ddd" },
   button: {
