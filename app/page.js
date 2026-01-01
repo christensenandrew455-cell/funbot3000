@@ -58,9 +58,9 @@ export default function Home() {
 
   return (
     <div style={styles.container}>
-      <div style={styles.card}>
 
-        {/* TOP INSTRUCTIONS */}
+      {/* MAIN INPUT / ANALYZE CARD */}
+      <div style={styles.card}>
         {!result && (
           <div style={styles.instructions}>
             <h1 style={styles.heroTitle}>
@@ -86,7 +86,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* INPUT */}
         {!result && (
           <form onSubmit={handleSubmit} style={styles.form}>
             <input
@@ -104,18 +103,6 @@ export default function Home() {
             </p>
           </form>
         )}
-
-        {/* WHY IT MATTERS BOX */}
-        <div style={styles.factsBox}>
-          <h2 style={styles.factsTitle}>Why It Matters</h2>
-          <ul style={styles.factsList}>
-            <li>Nearly <strong>1 in 3 shoppers</strong> report being scammed online.</li>
-            <li>Many Amazon and online listings are dropshippers reselling products at double or triple the original price.</li>
-            <li>Fake or manipulated reviews are common, making it hard to trust product ratings.</li>
-            <li>Online scams cost consumers and businesses billions every year.</li>
-            <li>We aim to help people avoid these scams and make smarter purchases.</li>
-          </ul>
-        </div>
 
         {error && <p style={styles.error}>{error}</p>}
 
@@ -161,6 +148,19 @@ export default function Home() {
           </>
         )}
       </div>
+
+      {/* WHY IT MATTERS CARD - SEPARATE WHITE BOX */}
+      <div style={styles.card}>
+        <h2 style={styles.factsTitle}>Why It Matters</h2>
+        <ul style={styles.factsList}>
+          <li>Nearly <strong>1 in 3 shoppers</strong> report being scammed online.</li>
+          <li>Many Amazon and online listings are dropshippers reselling products at double or triple the original price.</li>
+          <li>Fake or manipulated reviews are common, making it hard to trust product ratings.</li>
+          <li>Online scams cost consumers and businesses billions every year.</li>
+          <li>We aim to help people avoid these scams and make smarter purchases.</li>
+        </ul>
+      </div>
+
     </div>
   );
 }
@@ -169,10 +169,11 @@ const styles = {
   container: {
     minHeight: "100vh",
     display: "flex",
-    justifyContent: "center",
-    alignItems: "flex-start",
+    flexDirection: "column",
+    alignItems: "center",
     background: "#f5f7fb",
     padding: 20,
+    gap: 24, // space between cards
   },
   card: {
     background: "#fff",
@@ -181,7 +182,6 @@ const styles = {
     width: "100%",
     maxWidth: 540,
     boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
-    marginBottom: 40,
   },
   instructions: {
     marginBottom: 28,
@@ -225,12 +225,6 @@ const styles = {
     fontSize: 12,
     color: "#666",
     textAlign: "center",
-  },
-  factsBox: {
-    marginTop: 32,
-    background: "#e0f2fe",
-    padding: 24,
-    borderRadius: 16,
   },
   factsTitle: {
     fontSize: 22,
