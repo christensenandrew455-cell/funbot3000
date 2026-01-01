@@ -105,19 +105,17 @@ export default function Home() {
           </form>
         )}
 
-        {/* SCAM FACTS BOX */}
-        {!result && (
-          <div style={styles.scamFacts}>
-            <h3 style={{ marginBottom: 12 }}>Did You Know?</h3>
-            <ul style={styles.scamList}>
-              <li>Nearly <strong>1 in 3 shoppers</strong> report being scammed online. (Pew Research)</li>
-              <li>Over <strong>70% of adults</strong> have experienced some kind of online scam. (Pew Research)</li>
-              <li>Third-party sellers and reseller listings can hide overpriced or counterfeit products. (BBB)</li>
-              <li>Up to <strong>35–40%</strong> of product reviews may be fake or manipulated. (VPNRanks)</li>
-              <li>Online shopping fraud costs consumers and businesses billions globally each year. (Capital One Shopping)</li>
-            </ul>
-          </div>
-        )}
+        {/* WHY IT MATTERS BOX */}
+        <div style={styles.factsBox}>
+          <h2 style={styles.factsTitle}>Why It Matters</h2>
+          <ul style={styles.factsList}>
+            <li>Nearly <strong>1 in 3 shoppers</strong> report being scammed online.</li>
+            <li>Many Amazon and online listings are dropshippers reselling products at double or triple the original price.</li>
+            <li>Fake or manipulated reviews are common, making it hard to trust product ratings.</li>
+            <li>Online scams cost consumers and businesses billions every year.</li>
+            <li>We aim to help people avoid these scams and make smarter purchases.</li>
+          </ul>
+        </div>
 
         {error && <p style={styles.error}>{error}</p>}
 
@@ -172,7 +170,7 @@ const styles = {
     minHeight: "100vh",
     display: "flex",
     justifyContent: "center",
-    alignItems: "center",
+    alignItems: "flex-start",
     background: "#f5f7fb",
     padding: 20,
   },
@@ -183,6 +181,7 @@ const styles = {
     width: "100%",
     maxWidth: 540,
     boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
+    marginBottom: 40,
   },
   instructions: {
     marginBottom: 28,
@@ -227,17 +226,24 @@ const styles = {
     color: "#666",
     textAlign: "center",
   },
-  scamFacts: {
-    marginTop: 28,
-    background: "#f3f4f6",
-    padding: 16,
-    borderRadius: 12,
+  factsBox: {
+    marginTop: 32,
+    background: "#e0f2fe",
+    padding: 24,
+    borderRadius: 16,
   },
-  scamList: {
+  factsTitle: {
+    fontSize: 22,
+    fontWeight: 700,
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  factsList: {
     listStyle: "disc",
     paddingLeft: 20,
-    fontSize: 13,
+    fontSize: 14,
     color: "#333",
+    lineHeight: 1.6,
   },
   error: { color: "red", marginTop: 12, textAlign: "center" },
   verdict: (status) => ({
