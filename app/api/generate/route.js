@@ -1,11 +1,9 @@
 export const runtime = "nodejs";
 
 import { OpenAI } from "openai";
-import { chromium } from "playwright-core";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
-const BROWSER_WS_ENDPOINT = process.env.BROWSER_WS_ENDPOINT;
 
 /* ----------------- helpers ----------------- */
 function safeJSONParse(text, fallback = {}) {
@@ -22,7 +20,15 @@ function safeJSONParse(text, fallback = {}) {
 
 /* ----------------- PLAYWRIGHT SCRAPER ----------------- */
 async function scrapeWithPlaywright(url) {
-  const browser = await chromium.connectOverCDP(BROWSER_WS_ENDPOINT);
+  // Dynamic import — prevents Next.js bundling errors
+  const { chromium } = await import("playwright-core");
+
+  if (!process.env.BROWSER_WS_ENDPOINT)
+    throw new Error("Missing BROWSER_WS_ENDPOINT");
+
+  const browser = await chromium.connectOverCDP(
+    process.env.BROWSER_WS_ENDPOINT
+  );
 
   const context = await browser.newContext({
     userAgent:
@@ -40,7 +46,6 @@ async function scrapeWithPlaywright(url) {
   const productSignals = await page.evaluate(() => {
     const getText = (sel) =>
       document.querySelector(sel)?.textContent?.trim() || null;
-
     const getAttr = (sel, attr) =>
       document.querySelector(sel)?.getAttribute(attr) || null;
 
@@ -50,46 +55,19 @@ async function scrapeWithPlaywright(url) {
       null;
 
     return {
-      title:
-        getText("h1") ||
-        meta("og:title") ||
-        null,
-
-      price:
-        getAttr('[itemprop="price"]', "content") ||
-        getText('[class*="price"]') ||
-        meta("product:price:amount") ||
-        null,
-
-      currency:
-        getAttr('[itemprop="priceCurrency"]', "content") ||
-        meta("product:price:currency") ||
-        null,
-
-      averageRating:
-        getAttr('[itemprop="ratingValue"]', "content") ||
-        getText('[class*="rating"]') ||
-        null,
-
-      reviewCount:
-        getAttr('[itemprop="reviewCount"]', "content") ||
-        getText('[class*="review"]') ||
-        null,
-
-      seller:
-        getText('[itemprop="seller"]') ||
-        getText('[class*="seller"]') ||
-        getText('[class*="brand"]') ||
-        null,
-
-      description:
-        getText('[itemprop="description"]') ||
-        meta("og:description") ||
-        null,
+      title: getText("h1") || meta("og:title") || null,
+      price: getAttr('[itemprop="price"]', "content") || getText('[class*="price"]') || meta("product:price:amount") || null,
+      currency: getAttr('[itemprop="priceCurrency"]', "content") || meta("product:price:currency") || null,
+      averageRating: getAttr('[itemprop="ratingValue"]', "content") || null,
+      reviewCount: getAttr('[itemprop="reviewCount"]', "content") || null,
+      seller: getText('[itemprop="seller"]') || getText('[class*="seller"]') || getText('[class*="brand"]') || null,
+      description: getText('[itemprop="description"]') || meta("og:description") || null,
     };
   });
 
+  await context.close();
   await browser.close();
+
   return productSignals;
 }
 
@@ -117,25 +95,21 @@ async function braveSearch(query) {
 export async function POST(req) {
   try {
     const { url } = await req.json();
-    if (!url) {
+    if (!url)
       return new Response(JSON.stringify({ error: "Missing URL" }), {
         status: 400,
       });
-    }
 
-    /* 1. Scrape product page */
+    // 1️⃣ Scrape product page
     const productSignals = await scrapeWithPlaywright(url);
 
-    /* 2. Market + seller research */
+    // 2️⃣ Market and seller research
     const productSearchResults = await braveSearch(
       `${productSignals.title} average price`
     );
+    const sellerSearchResults = await braveSearch(productSignals.seller);
 
-    const sellerSearchResults = await braveSearch(
-      productSignals.seller
-    );
-
-    /* 3. GPT analysis */
+    // 3️⃣ GPT analysis
     const evalPrompt = `
 You are a product investigation system.
 
