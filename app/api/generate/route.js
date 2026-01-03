@@ -1,131 +1,114 @@
 export const runtime = "nodejs";
 
 import { OpenAI } from "openai";
-import whois from "whois-json";
 import fetch from "node-fetch";
-import { JSDOM } from "jsdom";
+import { chromium } from "playwright-core";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const BRAVE_API_KEY = process.env.BRAVE_API_KEY; // get your free Brave Search API key
+const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
+const BROWSER_WS_ENDPOINT = process.env.BROWSER_WS_ENDPOINT;
 
 /* ----------------- helpers ----------------- */
 function safeJSONParse(text, fallback = {}) {
-  if (!text) return fallback;
   try {
     const cleaned = text
-      .replace(/```json/gi, "")
-      .replace(/```/g, "")
-      .trim()
-      .match(/\{[\s\S]*\}/)?.[0];
-    return JSON.parse(cleaned) || fallback;
+      ?.replace(/```json/gi, "")
+      ?.replace(/```/g, "")
+      ?.match(/\{[\s\S]*\}/)?.[0];
+    return cleaned ? JSON.parse(cleaned) : fallback;
   } catch {
     return fallback;
   }
 }
 
-function getDomain(url) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return "unknown";
-  }
-}
+/* ----------------- PLAYWRIGHT SCRAPER ----------------- */
+async function scrapeWithPlaywright(url) {
+  const browser = await chromium.connectOverCDP(BROWSER_WS_ENDPOINT);
 
-/* ----------------- DOMAIN SIGNALS ----------------- */
-async function getDomainSignals(domain) {
-  try {
-    const data = await Promise.race([
-      whois(domain),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("WHOIS timeout")), 5000)
-      ),
-    ]);
+  const context = await browser.newContext({
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120",
+    viewport: { width: 1280, height: 800 },
+  });
 
-    const created =
-      data.creationDate || data.createdDate || data.registeredDate || null;
+  const page = await context.newPage();
 
-    const createdAt = created ? new Date(created) : null;
-    const ageDays = createdAt
-      ? Math.floor((Date.now() - createdAt.getTime()) / 86400000)
-      : null;
+  await page.goto(url, {
+    waitUntil: "networkidle",
+    timeout: 30000,
+  });
+
+  const productSignals = await page.evaluate(() => {
+    const getText = (sel) =>
+      document.querySelector(sel)?.textContent?.trim() || null;
+
+    const getAttr = (sel, attr) =>
+      document.querySelector(sel)?.getAttribute(attr) || null;
+
+    const meta = (name) =>
+      document.querySelector(`meta[property="${name}"]`)?.content ||
+      document.querySelector(`meta[name="${name}"]`)?.content ||
+      null;
 
     return {
-      domain,
-      ageDays,
-      registrar: data.registrar || null,
+      title:
+        getText("h1") ||
+        meta("og:title") ||
+        null,
+
+      price:
+        getAttr('[itemprop="price"]', "content") ||
+        getText('[class*="price"]') ||
+        meta("product:price:amount") ||
+        null,
+
+      currency:
+        getAttr('[itemprop="priceCurrency"]', "content") ||
+        meta("product:price:currency") ||
+        null,
+
+      averageRating:
+        getAttr('[itemprop="ratingValue"]', "content") ||
+        getText('[class*="rating"]') ||
+        null,
+
+      reviewCount:
+        getAttr('[itemprop="reviewCount"]', "content") ||
+        getText('[class*="review"]') ||
+        null,
+
+      seller:
+        getText('[itemprop="seller"]') ||
+        getText('[class*="seller"]') ||
+        getText('[class*="brand"]') ||
+        null,
+
+      description:
+        getText('[itemprop="description"]') ||
+        meta("og:description") ||
+        null,
     };
-  } catch {
-    return { domain, ageDays: null, registrar: null };
-  }
-}
-
-/* ----------------- SCRAPER ----------------- */
-async function scrapeWithJsdom(url) {
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120",
-      "Accept-Language": "en-US,en;q=0.9",
-    },
   });
 
-  if (!res.ok) throw new Error("Fetch failed");
-
-  const html = await res.text();
-  const dom = new JSDOM(html);
-  const { document } = dom.window;
-
-  const meta = {};
-  document.querySelectorAll("meta").forEach((m) => {
-    const name = m.getAttribute("property") || m.getAttribute("name");
-    const content = m.getAttribute("content");
-    if (name && content) meta[name] = content;
-  });
-
-  const jsonLdProducts = [];
-  document.querySelectorAll('script[type="application/ld+json"]').forEach((s) => {
-    try {
-      const parsed = JSON.parse(s.textContent);
-      if (parsed["@type"] === "Product") jsonLdProducts.push(parsed);
-      if (Array.isArray(parsed["@graph"]))
-        parsed["@graph"].forEach((n) => {
-          if (n["@type"] === "Product") jsonLdProducts.push(n);
-        });
-    } catch {}
-  });
-
-  const productSignals = {
-    title:
-      document.querySelector("h1")?.textContent?.trim() ||
-      meta["og:title"] ||
-      null,
-    price:
-      document.querySelector('[itemprop="price"]')?.getAttribute("content") ||
-      document.querySelector('[class*="price"]')?.textContent?.trim() ||
-      meta["product:price:amount"] ||
-      null,
-    currency:
-      document.querySelector('[itemprop="priceCurrency"]')?.getAttribute("content") ||
-      meta["product:price:currency"] ||
-      null,
-    seller:
-      document.querySelector('[itemprop="seller"]')?.textContent?.trim() ||
-      document.querySelector('[class*="seller"]')?.textContent?.trim() ||
-      null,
-  };
-
-  return { meta, jsonLdProducts, productSignals };
+  await browser.close();
+  return productSignals;
 }
 
 /* ----------------- BRAVE SEARCH ----------------- */
 async function braveSearch(query) {
   if (!query) return [];
-  const res = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&size=3`, {
-    headers: {
-      "Accept": "application/json",
-      "X-Subscription-Token": BRAVE_API_KEY,
-    },
-  });
+  const res = await fetch(
+    `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(
+      query
+    )}&size=5`,
+    {
+      headers: {
+        Accept: "application/json",
+        "X-Subscription-Token": BRAVE_API_KEY,
+      },
+    }
+  );
+
   if (!res.ok) return [];
   const data = await res.json();
   return data?.results || [];
@@ -135,39 +118,72 @@ async function braveSearch(query) {
 export async function POST(req) {
   try {
     const { url } = await req.json();
-    if (!url) return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
+    if (!url) {
+      return new Response(JSON.stringify({ error: "Missing URL" }), {
+        status: 400,
+      });
+    }
 
-    const domain = getDomain(url);
-    const domainSignals = await getDomainSignals(domain);
-    const scraped = await scrapeWithJsdom(url);
+    /* 1. Scrape product page */
+    const productSignals = await scrapeWithPlaywright(url);
 
-    // Brave search results
-    const productSearchResults = await braveSearch(scraped.productSignals.title);
-    const sellerSearchResults = await braveSearch(scraped.productSignals.seller);
+    /* 2. Market + seller research */
+    const productSearchResults = await braveSearch(
+      `${productSignals.title} average price`
+    );
 
+    const sellerSearchResults = await braveSearch(
+      productSignals.seller
+    );
+
+    /* 3. GPT analysis */
     const evalPrompt = `
-You are a product trust analysis system.
-Use ONLY the provided data. No guessing.
+You are a product investigation system.
 
-Inputs:
-- Domain signals: ${JSON.stringify(domainSignals)}
-- Page data: ${JSON.stringify(scraped)}
-- Product search results: ${JSON.stringify(productSearchResults)}
-- Seller search results: ${JSON.stringify(sellerSearchResults)}
+Rules:
+- Do NOT recommend buying.
+- Do NOT trust reviews at face value.
+- Think like a researcher, not a marketer.
 
-Return JSON only with:
+Product page data:
+${JSON.stringify(productSignals)}
+
+Market price research:
+${JSON.stringify(productSearchResults)}
+
+Seller research:
+${JSON.stringify(sellerSearchResults)}
+
+Tasks:
+1. Extract clean product info
+2. Detect AI-generated description patterns
+3. Evaluate review manipulation risk:
+   - Few reviews + perfect rating = suspicious
+   - Many reviews ≠ quality proof
+4. Compare price vs market average
+5. Assess scam likelihood logically
+
+Return JSON ONLY:
+
 {
-  "title": "string | null",
-  "price": "string | null",
-  "seller": "string | null",
-  "rating": "string | null",
-  "reviewCount": "string | null",
-  "websiteTrust": { "score": 1 | 2 | 3 | 4 | 5, "reason": "string" },
-  "sellerTrust": { "score": 1 | 2 | 3 | 4 | 5, "reason": "string" },
-  "productTrust": { "score": 1 | 2 | 3 | 4 | 5, "reason": "string" },
-  "overall": { "score": 1 | 2 | 3 | 4 | 5, "reason": "string" },
-  "status": "good" | "bad",
-  "alternative": "string | null"
+  "title": string | null,
+  "price": string | null,
+  "currency": string | null,
+  "averageRating": string | null,
+  "reviewCount": string | null,
+  "seller": string | null,
+  "description": string | null,
+
+  "signals": {
+    "aiGeneratedDescription": boolean,
+    "reviewManipulationLikely": boolean,
+    "overpricedLikely": boolean
+  },
+
+  "analysis": {
+    "summary": string,
+    "riskLevel": "low" | "medium" | "high"
+  }
 }
 `;
 
@@ -177,10 +193,18 @@ Return JSON only with:
       temperature: 0.1,
     });
 
-    const evaluation = safeJSONParse(gptResp.choices[0].message.content, {});
-    return new Response(JSON.stringify({ aiResult: evaluation }), { status: 200 });
+    const evaluation = safeJSONParse(
+      gptResp.choices[0].message.content,
+      {}
+    );
+
+    return new Response(JSON.stringify({ result: evaluation }), {
+      status: 200,
+    });
   } catch (err) {
     console.error("API ERROR:", err);
-    return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
+    return new Response(JSON.stringify({ error: "Server error" }), {
+      status: 500,
+    });
   }
 }
