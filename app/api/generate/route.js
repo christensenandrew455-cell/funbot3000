@@ -1,7 +1,6 @@
 export const runtime = "nodejs";
 
 import { OpenAI } from "openai";
-import playwright from "playwright-chromium";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
@@ -16,29 +15,6 @@ function safeJSONParse(text, fallback = {}) {
     return cleaned ? JSON.parse(cleaned) : fallback;
   } catch {
     return fallback;
-  }
-}
-
-/* ----------------- Playwright Screenshot ----------------- */
-async function screenshotPage(url) {
-  const browser = await playwright.chromium.launch({ headless: true });
-  const page = await browser.newPage();
-
-  try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
-
-    // Scroll to load lazy content
-    await page.evaluate(async () => {
-      for (let i = 0; i < 5; i++) {
-        window.scrollBy(0, window.innerHeight);
-        await new Promise((r) => setTimeout(r, 300));
-      }
-    });
-
-    const screenshot = await page.screenshot({ fullPage: true, type: "png" });
-    return screenshot.toString("base64");
-  } finally {
-    await browser.close();
   }
 }
 
@@ -68,6 +44,9 @@ export async function POST(req) {
   try {
     const { url } = await req.json();
     if (!url) return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
+
+    // Dynamic import of Playwright helper to avoid frontend bundling
+    const { screenshotPage } = await import("../../../lib/server/screenshot");
 
     /* 1. Screenshot the page */
     const screenshotBase64 = await screenshotPage(url);
@@ -120,12 +99,13 @@ Return JSON ONLY in this format:
     /* 3. Brave search for product name */
     const searchResults = await braveSearch(productInfo.title, 5);
 
-    // Summarize search results for GPT input
     const searchSummary = searchResults
-      .map((r, i) => `Result ${i + 1}:
+      .map(
+        (r, i) => `Result ${i + 1}:
 - Title: ${r.title}
 - URL: ${r.url}
-- Snippet: ${r.snippet || "N/A"}`)
+- Snippet: ${r.snippet || "N/A"}`
+      )
       .join("\n\n");
 
     /* 4. GPT: Combine screenshot + search results */
