@@ -29,42 +29,50 @@ async function screenshotPage(url) {
     defaultViewport: { width: 1280, height: 800 },
   });
 
-  const page = await browser.newPage();
-  await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+  try {
+    const page = await browser.newPage();
 
-  // scroll to load lazy content
-  await page.evaluate(async () => {
-    for (let i = 0; i < 6; i++) {
-      window.scrollBy(0, window.innerHeight);
-      await new Promise((r) => setTimeout(r, 500));
-    }
-  });
+    // Use DOMContentLoaded to avoid hanging on networkidle
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
 
-  const screenshot = await page.screenshot({
-    fullPage: true,
-    encoding: "base64",
-  });
+    // Scroll to load lazy content
+    await page.evaluate(async () => {
+      for (let i = 0; i < 6; i++) {
+        window.scrollBy(0, window.innerHeight);
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    });
 
-  await browser.close();
-  return screenshot;
+    const screenshot = await page.screenshot({
+      fullPage: true,
+      encoding: "base64",
+    });
+
+    return screenshot;
+  } finally {
+    await browser.close();
+  }
 }
 
 /* ----------------- BRAVE SEARCH ----------------- */
 async function braveSearch(query) {
   if (!query) return [];
-  const res = await fetch(
-    `https://api.search.brave.com/v1/web/search?q=${encodeURIComponent(query)}&size=5`,
-    {
-      headers: {
-        Accept: "application/json",
-        "X-Subscription-Token": BRAVE_API_KEY,
-      },
-    }
-  );
-
-  if (!res.ok) return [];
-  const data = await res.json();
-  return data?.results || [];
+  try {
+    const res = await fetch(
+      `https://api.search.brave.com/v1/web/search?q=${encodeURIComponent(query)}&size=5`,
+      {
+        headers: {
+          Accept: "application/json",
+          "X-Subscription-Token": BRAVE_API_KEY,
+        },
+      }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data?.results || [];
+  } catch {
+    return [];
+  }
 }
 
 /* ----------------- API ----------------- */
@@ -80,7 +88,7 @@ export async function POST(req) {
     /* 1. Screenshot page */
     const screenshotBase64 = await screenshotPage(url);
 
-    /* 2. GPT analysis (SCREENSHOT ONLY) */
+    /* 2. GPT analysis */
     const prompt = `
 You are a product trust investigator.
 
@@ -94,7 +102,6 @@ Return JSON ONLY in this shape:
 {
   "title": string | null,
   "status": "good" | "bad",
-
   "websiteTrust": { "score": 1-5, "reason": string },
   "sellerTrust": { "score": 1-5, "reason": string },
   "productTrust": { "score": 1-5, "reason": string },
