@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 
 import { OpenAI } from "openai";
-import chromium from "chrome-aws-lambda";
+import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -24,8 +24,8 @@ function safeJSONParse(text, fallback = {}) {
 async function screenshotPage(url) {
   const browser = await puppeteer.launch({
     args: chromium.args,
-    executablePath: await chromium.executablePath,
-    headless: true,
+    executablePath: await chromium.executablePath(),
+    headless: chromium.headless,
     defaultViewport: { width: 1280, height: 800 },
   });
 
@@ -36,7 +36,7 @@ async function screenshotPage(url) {
   await page.evaluate(async () => {
     for (let i = 0; i < 6; i++) {
       window.scrollBy(0, window.innerHeight);
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 500));
     }
   });
 
@@ -53,7 +53,9 @@ async function screenshotPage(url) {
 async function braveSearch(query) {
   if (!query) return [];
   const res = await fetch(
-    `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&size=5`,
+    `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(
+      query
+    )}&size=5`,
     {
       headers: {
         Accept: "application/json",
@@ -72,7 +74,9 @@ export async function POST(req) {
   try {
     const { url } = await req.json();
     if (!url) {
-      return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "Missing URL" }), {
+        status: 400,
+      });
     }
 
     /* 1. Screenshot page */
@@ -116,13 +120,14 @@ Return JSON ONLY in this shape:
 
     const evaluation = safeJSONParse(gptResp.output_text, {});
 
-    return new Response(
-      JSON.stringify({ aiResult: evaluation }),
-      { status: 200 }
-    );
-
+    return new Response(JSON.stringify({ aiResult: evaluation }), {
+      status: 200,
+    });
   } catch (err) {
     console.error("API ERROR:", err);
-    return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
+    return new Response(
+      JSON.stringify({ error: "Server error" }),
+      { status: 500 }
+    );
   }
 }
