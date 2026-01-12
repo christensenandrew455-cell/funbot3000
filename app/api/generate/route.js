@@ -1,8 +1,8 @@
 export const runtime = "nodejs";
 
 import { OpenAI } from "openai";
-import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
@@ -53,9 +53,7 @@ async function screenshotPage(url) {
 async function braveSearch(query) {
   if (!query) return [];
   const res = await fetch(
-    `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(
-      query
-    )}&size=5`,
+    `https://api.search.brave.com/v1/web/search?q=${encodeURIComponent(query)}&size=5`,
     {
       headers: {
         Accept: "application/json",
@@ -125,9 +123,8 @@ Return JSON ONLY in this shape:
     });
   } catch (err) {
     console.error("API ERROR:", err);
-    return new Response(
-      JSON.stringify({ error: "Server error" }),
-      { status: 500 }
-    );
+    return new Response(JSON.stringify({ error: "Server error" }), {
+      status: 500,
+    });
   }
 }
