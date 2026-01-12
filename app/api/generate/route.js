@@ -1,6 +1,8 @@
 export const runtime = "nodejs";
 
 import { OpenAI } from "openai";
+import chromium from "chrome-aws-lambda";
+import puppeteer from "puppeteer-core";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
@@ -18,66 +20,40 @@ function safeJSONParse(text, fallback = {}) {
   }
 }
 
-/* ----------------- PLAYWRIGHT SCRAPER ----------------- */
-async function scrapeWithPlaywright(url) {
-  // Dynamic import — prevents Next.js bundling errors
-  const { chromium } = await import("playwright-core");
-
-  if (!process.env.BROWSER_WS_ENDPOINT)
-    throw new Error("Missing BROWSER_WS_ENDPOINT");
-
-  const browser = await chromium.connectOverCDP(
-    process.env.BROWSER_WS_ENDPOINT
-  );
-
-  const context = await browser.newContext({
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120",
-    viewport: { width: 1280, height: 800 },
+/* ----------------- PUPPETEER SCREENSHOT ----------------- */
+async function screenshotPage(url) {
+  const browser = await puppeteer.launch({
+    args: chromium.args,
+    executablePath: await chromium.executablePath,
+    headless: true,
+    defaultViewport: { width: 1280, height: 800 },
   });
 
-  const page = await context.newPage();
+  const page = await browser.newPage();
+  await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
 
-  await page.goto(url, {
-    waitUntil: "networkidle",
-    timeout: 30000,
+  // scroll to load lazy content
+  await page.evaluate(async () => {
+    for (let i = 0; i < 6; i++) {
+      window.scrollBy(0, window.innerHeight);
+      await new Promise(r => setTimeout(r, 500));
+    }
   });
 
-  const productSignals = await page.evaluate(() => {
-    const getText = (sel) =>
-      document.querySelector(sel)?.textContent?.trim() || null;
-    const getAttr = (sel, attr) =>
-      document.querySelector(sel)?.getAttribute(attr) || null;
-
-    const meta = (name) =>
-      document.querySelector(`meta[property="${name}"]`)?.content ||
-      document.querySelector(`meta[name="${name}"]`)?.content ||
-      null;
-
-    return {
-      title: getText("h1") || meta("og:title") || null,
-      price: getAttr('[itemprop="price"]', "content") || getText('[class*="price"]') || meta("product:price:amount") || null,
-      currency: getAttr('[itemprop="priceCurrency"]', "content") || meta("product:price:currency") || null,
-      averageRating: getAttr('[itemprop="ratingValue"]', "content") || null,
-      reviewCount: getAttr('[itemprop="reviewCount"]', "content") || null,
-      seller: getText('[itemprop="seller"]') || getText('[class*="seller"]') || getText('[class*="brand"]') || null,
-      description: getText('[itemprop="description"]') || meta("og:description") || null,
-    };
+  const screenshot = await page.screenshot({
+    fullPage: true,
+    encoding: "base64",
   });
 
-  await context.close();
   await browser.close();
-
-  return productSignals;
+  return screenshot;
 }
 
 /* ----------------- BRAVE SEARCH ----------------- */
 async function braveSearch(query) {
   if (!query) return [];
   const res = await fetch(
-    `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(
-      query
-    )}&size=5`,
+    `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&size=5`,
     {
       headers: {
         Accept: "application/json",
@@ -95,89 +71,58 @@ async function braveSearch(query) {
 export async function POST(req) {
   try {
     const { url } = await req.json();
-    if (!url)
-      return new Response(JSON.stringify({ error: "Missing URL" }), {
-        status: 400,
-      });
+    if (!url) {
+      return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
+    }
 
-    // 1️⃣ Scrape product page
-    const productSignals = await scrapeWithPlaywright(url);
+    /* 1. Screenshot page */
+    const screenshotBase64 = await screenshotPage(url);
 
-    // 2️⃣ Market and seller research
-    const productSearchResults = await braveSearch(
-      `${productSignals.title} average price`
-    );
-    const sellerSearchResults = await braveSearch(productSignals.seller);
+    /* 2. GPT analysis (SCREENSHOT ONLY) */
+    const prompt = `
+You are a product trust investigator.
 
-    // 3️⃣ GPT analysis
-    const evalPrompt = `
-You are a product investigation system.
+From the screenshot:
+- Identify product name, seller/brand, stars, review count
+- Assess scam likelihood logically
+- Be conservative, not marketing-friendly
 
-Rules:
-- Do NOT recommend buying.
-- Do NOT trust reviews at face value.
-- Think like a researcher, not a marketer.
-
-Product page data:
-${JSON.stringify(productSignals)}
-
-Market price research:
-${JSON.stringify(productSearchResults)}
-
-Seller research:
-${JSON.stringify(sellerSearchResults)}
-
-Tasks:
-1. Extract clean product info
-2. Detect AI-generated description patterns
-3. Evaluate review manipulation risk:
-   - Few reviews + perfect rating = suspicious
-   - Many reviews ≠ quality proof
-4. Compare price vs market average
-5. Assess scam likelihood logically
-
-Return JSON ONLY:
+Return JSON ONLY in this shape:
 
 {
   "title": string | null,
-  "price": string | null,
-  "currency": string | null,
-  "averageRating": string | null,
-  "reviewCount": string | null,
-  "seller": string | null,
-  "description": string | null,
+  "status": "good" | "bad",
 
-  "signals": {
-    "aiGeneratedDescription": boolean,
-    "reviewManipulationLikely": boolean,
-    "overpricedLikely": boolean
-  },
-
-  "analysis": {
-    "summary": string,
-    "riskLevel": "low" | "medium" | "high"
-  }
+  "websiteTrust": { "score": 1-5, "reason": string },
+  "sellerTrust": { "score": 1-5, "reason": string },
+  "productTrust": { "score": 1-5, "reason": string },
+  "overall": { "score": 1-5, "reason": string }
 }
 `;
 
-    const gptResp = await openai.chat.completions.create({
+    const gptResp = await openai.responses.create({
       model: "gpt-4.1-mini",
-      messages: [{ role: "user", content: evalPrompt }],
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: prompt },
+            { type: "input_image", image_base64: screenshotBase64 },
+          ],
+        },
+      ],
       temperature: 0.1,
     });
 
-    const evaluation = safeJSONParse(
-      gptResp.choices[0].message.content,
-      {}
+    const evaluation = safeJSONParse(gptResp.output_text, {});
+
+    return new Response(
+      JSON.stringify({ aiResult: evaluation }),
+      { status: 200 }
     );
 
-    return new Response(JSON.stringify({ result: evaluation }), {
-      status: 200,
-    });
   } catch (err) {
     console.error("API ERROR:", err);
-    return new Response(JSON.stringify({ error: "Server error" }), {
-      status: 500,
-    });
+    return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
   }
 }
