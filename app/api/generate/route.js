@@ -46,7 +46,7 @@ export async function POST(req) {
     if (!url) return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
 
     // Dynamic import of Playwright helper to avoid frontend bundling
-    const { screenshotPage } = await import("../../../../lib/server/screenshot");
+    const { screenshotPage } = await import("../../../lib/server/screenshot");
 
     /* 1. Screenshot the page */
     const screenshotBase64 = await screenshotPage(url);
