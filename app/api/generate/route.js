@@ -27,8 +27,8 @@ async function braveSearch(query, size = 5) {
       {
         headers: {
           Accept: "application/json",
-          "X-Subscription-Token": BRAVE_API_KEY,
-        },
+          "X-Subscription-Token": BRAVE_API_KEY
+        }
       }
     );
     if (!res.ok) return [];
@@ -43,10 +43,12 @@ async function braveSearch(query, size = 5) {
 export async function POST(req) {
   try {
     const { url } = await req.json();
-    if (!url) return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
+    if (!url) {
+      return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
+    }
 
-    // Dynamic import of Playwright helper to avoid frontend bundling
-    const { screenshotPage } = await import("../../../lib/server/screenshot");
+    // Puppeteer-based screenshot (Vercel safe)
+    const { screenshotPage } = await import("../../../lib/server/screenshot.js");
 
     /* 1. Screenshot the page */
     const screenshotBase64 = await screenshotPage(url);
@@ -80,11 +82,11 @@ Return JSON ONLY in this format:
           role: "user",
           content: [
             { type: "input_text", text: screenshotPrompt },
-            { type: "input_image", image_base64: screenshotBase64 },
-          ],
-        },
+            { type: "input_image", image_base64: screenshotBase64 }
+          ]
+        }
       ],
-      temperature: 0,
+      temperature: 0
     });
 
     const productInfo = safeJSONParse(screenshotAnalysis.output_text, {});
@@ -96,7 +98,7 @@ Return JSON ONLY in this format:
       );
     }
 
-    /* 3. Brave search for product name */
+    /* 3. Brave search */
     const searchResults = await braveSearch(productInfo.title, 5);
 
     const searchSummary = searchResults
@@ -108,7 +110,7 @@ Return JSON ONLY in this format:
       )
       .join("\n\n");
 
-    /* 4. GPT: Combine screenshot + search results */
+    /* 4. Final GPT evaluation */
     const finalPrompt = `
 You are a product trust evaluator AI.
 
@@ -116,17 +118,10 @@ Given:
 1) Product info from screenshot:
 ${JSON.stringify(productInfo, null, 2)}
 
-2) Recent top search results for this product:
+2) Recent top search results:
 ${searchSummary}
 
-Tasks:
-- Verify if the price is reasonable.
-- Assess if the product seems legitimate or a scam.
-- Evaluate the seller's trustworthiness based on available info.
-- Suggest a better or cheaper alternative if one exists.
-- Return a conservative, logical assessment.
-- Return JSON ONLY in this format:
-
+Return JSON ONLY in this format:
 {
   "title": string,
   "status": "good" | "bad",
@@ -141,7 +136,7 @@ Tasks:
     const finalAnalysis = await openai.responses.create({
       model: "gpt-4.1-mini",
       input: [{ role: "user", content: finalPrompt }],
-      temperature: 0.1,
+      temperature: 0.1
     });
 
     const evaluation = safeJSONParse(finalAnalysis.output_text, {});
