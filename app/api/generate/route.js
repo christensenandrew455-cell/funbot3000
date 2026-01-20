@@ -4,6 +4,7 @@ import { OpenAI } from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
+const SCREENSHOT_API_KEY = process.env.SCREENSHOT_API_KEY;
 
 /* ----------------- Helpers ----------------- */
 function safeJSONParse(text, fallback = {}) {
@@ -18,7 +19,6 @@ function safeJSONParse(text, fallback = {}) {
   }
 }
 
-/* ----------------- Brave Search ----------------- */
 async function braveSearch(query, size = 5) {
   if (!query) return [];
   try {
@@ -27,8 +27,8 @@ async function braveSearch(query, size = 5) {
       {
         headers: {
           Accept: "application/json",
-          "X-Subscription-Token": BRAVE_API_KEY
-        }
+          "X-Subscription-Token": BRAVE_API_KEY,
+        },
       }
     );
     if (!res.ok) return [];
@@ -47,13 +47,17 @@ export async function POST(req) {
       return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
     }
 
-    // Puppeteer-based screenshot (Vercel safe)
-    const { screenshotPage } = await import("../../../lib/server/screenshot.js");
+    // ----------------- STEP 1: Build Screenshot URL -----------------
+    // Let client fetch screenshot directly
+    if (!SCREENSHOT_API_KEY) {
+      return new Response(JSON.stringify({ error: "Screenshot API key missing" }), { status: 500 });
+    }
 
-    /* 1. Screenshot the page */
-    const screenshotBase64 = await screenshotPage(url);
+    const screenshotURL = `https://shot.screenshotapi.net/screenshot?token=${SCREENSHOT_API_KEY}&url=${encodeURIComponent(
+      url
+    )}&output=base64&device=desktop&full_page=true&wait_until=domcontentloaded`;
 
-    /* 2. GPT: Extract product info from screenshot */
+    // ----------------- STEP 2: GPT - Extract product info -----------------
     const screenshotPrompt = `
 You are a product investigator AI. Analyze the screenshot of a product page.
 Extract the following information:
@@ -82,11 +86,11 @@ Return JSON ONLY in this format:
           role: "user",
           content: [
             { type: "input_text", text: screenshotPrompt },
-            { type: "input_image", image_base64: screenshotBase64 }
-          ]
-        }
+            { type: "input_image_url", image_url: screenshotURL },
+          ],
+        },
       ],
-      temperature: 0
+      temperature: 0,
     });
 
     const productInfo = safeJSONParse(screenshotAnalysis.output_text, {});
@@ -98,7 +102,7 @@ Return JSON ONLY in this format:
       );
     }
 
-    /* 3. Brave search */
+    // ----------------- STEP 3: Brave search -----------------
     const searchResults = await braveSearch(productInfo.title, 5);
 
     const searchSummary = searchResults
@@ -110,7 +114,7 @@ Return JSON ONLY in this format:
       )
       .join("\n\n");
 
-    /* 4. Final GPT evaluation */
+    // ----------------- STEP 4: Final GPT evaluation -----------------
     const finalPrompt = `
 You are a product trust evaluator AI.
 
@@ -136,12 +140,15 @@ Return JSON ONLY in this format:
     const finalAnalysis = await openai.responses.create({
       model: "gpt-4.1-mini",
       input: [{ role: "user", content: finalPrompt }],
-      temperature: 0.1
+      temperature: 0.1,
     });
 
     const evaluation = safeJSONParse(finalAnalysis.output_text, {});
 
-    return new Response(JSON.stringify({ aiResult: evaluation }), { status: 200 });
+    return new Response(
+      JSON.stringify({ aiResult: evaluation, screenshotURL }),
+      { status: 200 }
+    );
   } catch (err) {
     console.error("API ERROR:", err);
     return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
