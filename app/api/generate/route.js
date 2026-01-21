@@ -24,7 +24,7 @@ function safeJSONParse(text, fallback = {}) {
 
 /* ----------------- Brave Search ----------------- */
 async function braveSearch(query, size = 5) {
-  if (!query) return [];
+  if (!query || !BRAVE_API_KEY) return [];
   try {
     const res = await fetch(
       `https://api.search.brave.com/v1/web/search?q=${encodeURIComponent(query)}&size=${size}`,
@@ -72,9 +72,7 @@ export async function POST(req) {
   try {
     const { url } = await req.json();
     if (!url) {
-      return new Response(JSON.stringify({ error: "Missing URL" }), {
-        status: 400,
-      });
+      return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
     }
 
     /* 1) Screenshot page */
@@ -108,17 +106,22 @@ Return JSON ONLY:
           role: "user",
           content: [
             { type: "input_text", text: extractPrompt },
-            { type: "input_image", image_base64: screenshotBase64 },
+            {
+              type: "input_image",
+              image_url: {
+                url: `data:image/png;base64,${screenshotBase64}`,
+              },
+            },
           ],
         },
       ],
       temperature: 0,
     });
 
-    const productInfo = safeJSONParse(
-      extractResponse.output_text,
-      {}
-    );
+    const extractText =
+      extractResponse.output?.[0]?.content?.[0]?.text || "";
+
+    const productInfo = safeJSONParse(extractText, {});
 
     if (!productInfo.title) {
       return new Response(
@@ -148,40 +151,34 @@ Given:
 ${JSON.stringify(productInfo, null, 2)}
 
 2) Recent search results:
-${searchSummary}
+${searchSummary || "No external results found"}
 
 Return JSON ONLY:
 {
   "title": string,
   "status": "good" | "bad",
-  "websiteTrust": { "score":1-5, "reason": string },
-  "sellerTrust": { "score":1-5, "reason": string },
-  "productTrust": { "score":1-5, "reason": string },
-  "overall": { "score":1-5, "reason": string },
+  "websiteTrust": { "score": 1-5, "reason": string },
+  "sellerTrust": { "score": 1-5, "reason": string },
+  "productTrust": { "score": 1-5, "reason": string },
+  "overall": { "score": 1-5, "reason": string },
   "alternative": { "title": string, "url": string, "price": string, "seller": string } | null
 }
 `;
 
     const finalResponse = await openai.responses.create({
       model: "gpt-4.1-mini",
-      input: [{ role: "user", content: finalPrompt }],
+      input: finalPrompt,
       temperature: 0.1,
     });
 
-    const evaluation = safeJSONParse(
-      finalResponse.output_text,
-      {}
-    );
+    const finalText =
+      finalResponse.output?.[0]?.content?.[0]?.text || "";
 
-    return new Response(
-      JSON.stringify({ aiResult: evaluation }),
-      { status: 200 }
-    );
+    const evaluation = safeJSONParse(finalText, {});
+
+    return new Response(JSON.stringify({ aiResult: evaluation }), { status: 200 });
   } catch (err) {
     console.error("API ERROR:", err);
-    return new Response(
-      JSON.stringify({ error: "Server error" }),
-      { status: 500 }
-    );
+    return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
   }
 }
