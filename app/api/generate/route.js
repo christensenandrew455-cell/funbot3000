@@ -2,10 +2,12 @@ export const runtime = "nodejs";
 
 import { OpenAI } from "openai";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
-const SCREENSHOT_API_KEY = process.env.SCREENSHOT_API_KEY;
+const APIFLASH_KEY = process.env.APIFLASH_KEY;
 
 /* ----------------- Helpers ----------------- */
 function safeJSONParse(text, fallback = {}) {
@@ -20,6 +22,7 @@ function safeJSONParse(text, fallback = {}) {
   }
 }
 
+/* ----------------- Brave Search ----------------- */
 async function braveSearch(query, size = 5) {
   if (!query) return [];
   try {
@@ -40,42 +43,54 @@ async function braveSearch(query, size = 5) {
   }
 }
 
+/* ----------------- Screenshot (ApiFlash) ----------------- */
+async function screenshotPage(url) {
+  if (!APIFLASH_KEY) {
+    throw new Error("ApiFlash key missing");
+  }
+
+  const screenshotUrl =
+    `https://api.apiflash.com/v1/urltoimage` +
+    `?access_key=${APIFLASH_KEY}` +
+    `&url=${encodeURIComponent(url)}` +
+    `&full_page=true` +
+    `&wait_until=page_loaded` +
+    `&format=png`;
+
+  const res = await fetch(screenshotUrl);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`ApiFlash error ${res.status}: ${text}`);
+  }
+
+  const buffer = await res.arrayBuffer();
+  return Buffer.from(buffer).toString("base64");
+}
+
 /* ----------------- API ----------------- */
 export async function POST(req) {
   try {
     const { url } = await req.json();
     if (!url) {
-      return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "Missing URL" }), {
+        status: 400,
+      });
     }
 
-    if (!SCREENSHOT_API_KEY) {
-      return new Response(JSON.stringify({ error: "Screenshot API key missing" }), { status: 500 });
-    }
+    /* 1) Screenshot page */
+    const screenshotBase64 = await screenshotPage(url);
 
-    /* ----------------- STEP 1: Screenshot URL (PUBLIC IMAGE) ----------------- */
-    const screenshotURL =
-      `https://shot.screenshotapi.net/screenshot` +
-      `?token=${SCREENSHOT_API_KEY}` +
-      `&url=${encodeURIComponent(url)}` +
-      `&output=image` +
-      `&device=desktop` +
-      `&full_page=true` +
-      `&wait_until=domcontentloaded`;
-
-    /* ----------------- STEP 2: GPT Vision ----------------- */
-    const visionPrompt = `
-You are a product investigator AI.
-
-Analyze the product page screenshot and extract:
-
+    /* 2) GPT: Extract product info */
+    const extractPrompt = `
+Analyze this product page screenshot and extract:
 - product title
 - seller or brand
-- product price
-- main product features
-- star rating (1-5)
+- price
+- main features
+- star rating (1–5)
 - review count
 
-Return JSON ONLY in this format:
+Return JSON ONLY:
 {
   "title": string,
   "seller": string,
@@ -86,33 +101,33 @@ Return JSON ONLY in this format:
 }
 `;
 
-    const visionResponse = await openai.responses.create({
+    const extractResponse = await openai.responses.create({
       model: "gpt-4.1-mini",
       input: [
         {
           role: "user",
           content: [
-            { type: "input_text", text: visionPrompt },
-            {
-              type: "input_image",
-              image_url: screenshotURL,
-            },
+            { type: "input_text", text: extractPrompt },
+            { type: "input_image", image_base64: screenshotBase64 },
           ],
         },
       ],
       temperature: 0,
     });
 
-    const productInfo = safeJSONParse(visionResponse.output_text, {});
+    const productInfo = safeJSONParse(
+      extractResponse.output_text,
+      {}
+    );
 
-    if (!productInfo?.title) {
+    if (!productInfo.title) {
       return new Response(
         JSON.stringify({ error: "Failed to extract product info" }),
         { status: 500 }
       );
     }
 
-    /* ----------------- STEP 3: Brave Search ----------------- */
+    /* 3) Brave Search */
     const searchResults = await braveSearch(productInfo.title, 5);
 
     const searchSummary = searchResults
@@ -124,7 +139,7 @@ Return JSON ONLY in this format:
       )
       .join("\n\n");
 
-    /* ----------------- STEP 4: Trust Evaluation ----------------- */
+    /* 4) Final GPT evaluation */
     const finalPrompt = `
 You are a product trust evaluator AI.
 
@@ -132,35 +147,41 @@ Given:
 1) Product info:
 ${JSON.stringify(productInfo, null, 2)}
 
-2) Search results:
+2) Recent search results:
 ${searchSummary}
 
-Return JSON ONLY in this format:
+Return JSON ONLY:
 {
   "title": string,
   "status": "good" | "bad",
-  "websiteTrust": { "score": 1-5, "reason": string },
-  "sellerTrust": { "score": 1-5, "reason": string },
-  "productTrust": { "score": 1-5, "reason": string },
-  "overall": { "score": 1-5, "reason": string },
+  "websiteTrust": { "score":1-5, "reason": string },
+  "sellerTrust": { "score":1-5, "reason": string },
+  "productTrust": { "score":1-5, "reason": string },
+  "overall": { "score":1-5, "reason": string },
   "alternative": { "title": string, "url": string, "price": string, "seller": string } | null
 }
 `;
 
     const finalResponse = await openai.responses.create({
       model: "gpt-4.1-mini",
-      input: finalPrompt,
+      input: [{ role: "user", content: finalPrompt }],
       temperature: 0.1,
     });
 
-    const evaluation = safeJSONParse(finalResponse.output_text, {});
+    const evaluation = safeJSONParse(
+      finalResponse.output_text,
+      {}
+    );
 
     return new Response(
-      JSON.stringify({ aiResult: evaluation, screenshotURL }),
+      JSON.stringify({ aiResult: evaluation }),
       { status: 200 }
     );
   } catch (err) {
     console.error("API ERROR:", err);
-    return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
+    return new Response(
+      JSON.stringify({ error: "Server error" }),
+      { status: 500 }
+    );
   }
 }
