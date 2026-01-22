@@ -69,14 +69,26 @@ async function screenshotPage(url) {
 export async function POST(req) {
   try {
     const { url } = await req.json();
-    if (!url) return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
+    if (!url) {
+      return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
+    }
+
+    const domain = new URL(url).hostname;
 
     /* 1) Screenshot page */
     const screenshotBase64 = await screenshotPage(url);
 
-    /* 2) GPT: Extract product info */
+    /* 2) GPT: Extract product info (URL + domain INCLUDED) */
     const extractPrompt = `
-Analyze this product page screenshot and extract:
+You are analyzing a product page.
+
+Product URL:
+${url}
+
+Website domain:
+${domain}
+
+Using the screenshot, extract:
 - product title
 - seller or brand
 - price
@@ -112,16 +124,26 @@ Return JSON ONLY:
       temperature: 0,
     });
 
-    const extractText = extractResponse.output?.[0]?.content?.[0]?.text || "";
+    const extractText =
+      extractResponse.output?.[0]?.content?.[0]?.text || "";
+
     const productInfo = safeJSONParse(extractText, {});
 
     if (!productInfo.title) {
-      return new Response(JSON.stringify({ error: "Failed to extract product info" }), { status: 500 });
+      return new Response(
+        JSON.stringify({ error: "Failed to extract product info" }),
+        { status: 500 }
+      );
     }
 
-    /* 3) Brave Search */
-    const searchResults = await braveSearch(productInfo.title, 5);
-    const searchSummary = searchResults
+    /* 3) Brave Search — IMPROVED USING SCREENSHOT DATA + DOMAIN */
+    const productSearchQuery = `${productInfo.title} ${productInfo.seller || ""} reviews`;
+    const domainSearchQuery = `${domain} legit reviews scam`;
+
+    const productResults = await braveSearch(productSearchQuery, 5);
+    const domainResults = await braveSearch(domainSearchQuery, 5);
+
+    const searchSummary = [...productResults, ...domainResults]
       .map(
         (r, i) => `Result ${i + 1}:
 - Title: ${r.title}
@@ -130,16 +152,32 @@ Return JSON ONLY:
       )
       .join("\n\n");
 
-    /* 4) Final GPT evaluation */
+    /* 4) Final GPT evaluation (GENERAL KNOWLEDGE + SEARCH + URL) */
     const finalPrompt = `
 You are a product trust evaluator AI.
 
-Given:
-1) Product info:
+You are allowed to use:
+- General knowledge about well-known and unknown websites
+- The product screenshot data
+- The website domain
+- The provided web search results
+
+Product URL:
+${url}
+
+Website domain:
+${domain}
+
+Extracted product info:
 ${JSON.stringify(productInfo, null, 2)}
 
-2) Recent search results:
+Web search results:
 ${searchSummary || "No external results found"}
+
+Evaluate the trustworthiness of:
+- the website
+- the seller
+- the product
 
 Return JSON ONLY:
 {
@@ -159,12 +197,20 @@ Return JSON ONLY:
       temperature: 0.1,
     });
 
-    const finalText = finalResponse.output?.[0]?.content?.[0]?.text || "";
+    const finalText =
+      finalResponse.output?.[0]?.content?.[0]?.text || "";
+
     const evaluation = safeJSONParse(finalText, {});
 
-    return new Response(JSON.stringify({ aiResult: evaluation }), { status: 200 });
+    return new Response(
+      JSON.stringify({ aiResult: evaluation }),
+      { status: 200 }
+    );
   } catch (err) {
     console.error("API ERROR:", err);
-    return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
+    return new Response(
+      JSON.stringify({ error: "Server error" }),
+      { status: 500 }
+    );
   }
 }
