@@ -45,9 +45,7 @@ async function braveSearch(query, size = 5) {
 
 /* ----------------- Screenshot (ApiFlash) ----------------- */
 async function screenshotPage(url) {
-  if (!APIFLASH_KEY) {
-    throw new Error("ApiFlash key missing");
-  }
+  if (!APIFLASH_KEY) throw new Error("ApiFlash key missing");
 
   const screenshotUrl =
     `https://api.apiflash.com/v1/urltoimage` +
@@ -71,9 +69,7 @@ async function screenshotPage(url) {
 export async function POST(req) {
   try {
     const { url } = await req.json();
-    if (!url) {
-      return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
-    }
+    if (!url) return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
 
     /* 1) Screenshot page */
     const screenshotBase64 = await screenshotPage(url);
@@ -108,9 +104,7 @@ Return JSON ONLY:
             { type: "input_text", text: extractPrompt },
             {
               type: "input_image",
-              image_url: {
-                url: `data:image/png;base64,${screenshotBase64}`,
-              },
+              image_url: `data:image/png;base64,${screenshotBase64}`,
             },
           ],
         },
@@ -118,21 +112,15 @@ Return JSON ONLY:
       temperature: 0,
     });
 
-    const extractText =
-      extractResponse.output?.[0]?.content?.[0]?.text || "";
-
+    const extractText = extractResponse.output?.[0]?.content?.[0]?.text || "";
     const productInfo = safeJSONParse(extractText, {});
 
     if (!productInfo.title) {
-      return new Response(
-        JSON.stringify({ error: "Failed to extract product info" }),
-        { status: 500 }
-      );
+      return new Response(JSON.stringify({ error: "Failed to extract product info" }), { status: 500 });
     }
 
     /* 3) Brave Search */
     const searchResults = await braveSearch(productInfo.title, 5);
-
     const searchSummary = searchResults
       .map(
         (r, i) => `Result ${i + 1}:
@@ -171,9 +159,7 @@ Return JSON ONLY:
       temperature: 0.1,
     });
 
-    const finalText =
-      finalResponse.output?.[0]?.content?.[0]?.text || "";
-
+    const finalText = finalResponse.output?.[0]?.content?.[0]?.text || "";
     const evaluation = safeJSONParse(finalText, {});
 
     return new Response(JSON.stringify({ aiResult: evaluation }), { status: 200 });
