@@ -51,8 +51,12 @@ export async function POST(req) {
 
     const domain = new URL(url).hostname;
 
-    /* 1) Screenshot page */
-    const screenshotBase64 = await screenshotPage(url);
+    /* 1) Screenshot page with modal hiding for Amazon/others */
+    const screenshotBase64 = await screenshotPage(url, {
+      hideSelectors: domain.includes("amazon.com")
+        ? ".a-popover,.glow-toaster,.a-declarative,.nav-main,.nav-flyout"
+        : "",
+    });
 
     /* 2) Extract product info */
     const extractPrompt = `
