@@ -1,13 +1,13 @@
 export const runtime = "nodejs";
 
 import { OpenAI } from "openai";
+import { screenshotPage } from "@/lib/server/screenshot";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
-const APIFLASH_KEY = process.env.APIFLASH_KEY;
 
 /* ----------------- Helpers ----------------- */
 function safeJSONParse(text, fallback = {}) {
@@ -43,42 +43,18 @@ async function braveSearch(query, size = 5) {
   }
 }
 
-/* ----------------- Screenshot (ApiFlash) ----------------- */
-async function screenshotPage(url) {
-  if (!APIFLASH_KEY) throw new Error("ApiFlash key missing");
-
-  const screenshotUrl =
-    `https://api.apiflash.com/v1/urltoimage` +
-    `?access_key=${APIFLASH_KEY}` +
-    `&url=${encodeURIComponent(url)}` +
-    `&full_page=true` +
-    `&wait_until=page_loaded` +
-    `&format=png`;
-
-  const res = await fetch(screenshotUrl);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`ApiFlash error ${res.status}: ${text}`);
-  }
-
-  const buffer = await res.arrayBuffer();
-  return Buffer.from(buffer).toString("base64");
-}
-
 /* ----------------- API ----------------- */
 export async function POST(req) {
   try {
     const { url } = await req.json();
-    if (!url) {
-      return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
-    }
+    if (!url) return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
 
     const domain = new URL(url).hostname;
 
     /* 1) Screenshot page */
     const screenshotBase64 = await screenshotPage(url);
 
-    /* 2) GPT: Extract product info (URL + domain INCLUDED) */
+    /* 2) Extract product info */
     const extractPrompt = `
 You are analyzing a product page.
 
@@ -114,19 +90,14 @@ Return JSON ONLY:
           role: "user",
           content: [
             { type: "input_text", text: extractPrompt },
-            {
-              type: "input_image",
-              image_url: `data:image/png;base64,${screenshotBase64}`,
-            },
+            { type: "input_image", image_url: `data:image/png;base64,${screenshotBase64}` },
           ],
         },
       ],
       temperature: 0,
     });
 
-    const extractText =
-      extractResponse.output?.[0]?.content?.[0]?.text || "";
-
+    const extractText = extractResponse.output?.[0]?.content?.[0]?.text || "";
     const productInfo = safeJSONParse(extractText, {});
 
     if (!productInfo.title) {
@@ -136,43 +107,87 @@ Return JSON ONLY:
       );
     }
 
-    /* 3) Brave Search — IMPROVED USING SCREENSHOT DATA + DOMAIN */
-    const productSearchQuery = `${productInfo.title} ${productInfo.seller || ""} reviews`;
-    const domainSearchQuery = `${domain} legit reviews scam`;
+    /* 3) Check general knowledge for seller/domain first */
+    const knowledgePrompt = `
+You are a product trust evaluator AI.
+Based on your general knowledge, answer the following:
 
-    const productResults = await braveSearch(productSearchQuery, 5);
-    const domainResults = await braveSearch(domainSearchQuery, 5);
+Seller: "${productInfo.seller || "Unknown"}"
+Domain: "${domain}"
 
-    const searchSummary = [...productResults, ...domainResults]
-      .map(
-        (r, i) => `Result ${i + 1}:
-- Title: ${r.title}
-- URL: ${r.url}
-- Snippet: ${r.snippet || "N/A"}`
-      )
-      .join("\n\n");
+Return JSON ONLY:
+{
+  "sellerKnown": boolean,
+  "sellerTrust": { "score": 1-5, "reason": string } | null,
+  "domainKnown": boolean,
+  "websiteTrust": { "score": 1-5, "reason": string } | null
+}
+`;
 
-    /* 4) Final GPT evaluation (GENERAL KNOWLEDGE + SEARCH + URL) */
+    const knowledgeResponse = await openai.responses.create({
+      model: "gpt-4.1-mini",
+      input: knowledgePrompt,
+      temperature: 0,
+    });
+
+    const knowledgeText = knowledgeResponse.output?.[0]?.content?.[0]?.text || "{}";
+    const knowledgeData = safeJSONParse(knowledgeText, {});
+
+    let sellerResults = [];
+    let domainResults = [];
+
+    /* 4) Search seller/domain if unknown */
+    if (!knowledgeData.sellerKnown && productInfo.seller) {
+      sellerResults = await braveSearch(
+        `"${productInfo.seller}" reviews OR complaint OR scam OR fraud OR "customer feedback"`,
+        7
+      );
+    }
+
+    if (!knowledgeData.domainKnown) {
+      domainResults = await braveSearch(
+        `"${domain}" scam OR fraud OR legit OR review OR "customer complaint"`,
+        7
+      );
+    }
+
+    /* 5) Always search product reviews/issues */
+    const productResults = await braveSearch(
+      `"${productInfo.title}" reviews OR rating OR complaint OR fake OR scam OR refund OR defect OR broken`,
+      7
+    );
+
+    /* Combine results for GPT prompt */
+    const formatResults = (arr) =>
+      arr
+        .map(
+          (r, i) =>
+            `Result ${i + 1}:\n- Title: ${r.title}\n- URL: ${r.url}\n- Snippet: ${r.snippet || "N/A"}`
+        )
+        .join("\n\n");
+
     const finalPrompt = `
 You are a product trust evaluator AI.
 
-You are allowed to use:
-- General knowledge about well-known and unknown websites
-- The product screenshot data
-- The website domain
-- The provided web search results
+Use:
+- General knowledge (sellerKnown/domainKnown)
+- Seller/domain web search results (if unknown)
+- Product review and issue searches
+- Product screenshot data
 
-Product URL:
-${url}
+Product URL: ${url}
+Domain: ${domain}
+Product info: ${JSON.stringify(productInfo, null, 2)}
+General knowledge: ${JSON.stringify(knowledgeData, null, 2)}
 
-Website domain:
-${domain}
+Seller search results:
+${formatResults(sellerResults) || "None"}
 
-Extracted product info:
-${JSON.stringify(productInfo, null, 2)}
+Domain search results:
+${formatResults(domainResults) || "None"}
 
-Web search results:
-${searchSummary || "No external results found"}
+Product search results:
+${formatResults(productResults) || "None"}
 
 Evaluate the trustworthiness of:
 - the website
@@ -197,20 +212,12 @@ Return JSON ONLY:
       temperature: 0.1,
     });
 
-    const finalText =
-      finalResponse.output?.[0]?.content?.[0]?.text || "";
-
+    const finalText = finalResponse.output?.[0]?.content?.[0]?.text || "{}";
     const evaluation = safeJSONParse(finalText, {});
 
-    return new Response(
-      JSON.stringify({ aiResult: evaluation }),
-      { status: 200 }
-    );
+    return new Response(JSON.stringify({ aiResult: evaluation }), { status: 200 });
   } catch (err) {
     console.error("API ERROR:", err);
-    return new Response(
-      JSON.stringify({ error: "Server error" }),
-      { status: 500 }
-    );
+    return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
   }
 }
