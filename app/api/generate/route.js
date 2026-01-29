@@ -51,22 +51,19 @@ export async function POST(req) {
 
     const domain = new URL(url).hostname;
 
-    /* 1) Screenshot page with modal hiding for Amazon/others */
+    /* 1) Capture screenshot */
     const screenshotBase64 = await screenshotPage(url, {
       hideSelectors: domain.includes("amazon.com")
         ? ".a-popover,.glow-toaster,.a-declarative,.nav-main,.nav-flyout"
         : "",
     });
 
-    /* 2) Extract product info */
+    /* 2) Extract product info via AI using screenshot */
     const extractPrompt = `
 You are analyzing a product page.
 
-Product URL:
-${url}
-
-Website domain:
-${domain}
+Product URL: ${url}
+Website domain: ${domain}
 
 Using the screenshot, extract:
 - product title
@@ -104,14 +101,7 @@ Return JSON ONLY:
     const extractText = extractResponse.output?.[0]?.content?.[0]?.text || "";
     const productInfo = safeJSONParse(extractText, {});
 
-    if (!productInfo.title) {
-      return new Response(
-        JSON.stringify({ error: "Failed to extract product info" }),
-        { status: 500 }
-      );
-    }
-
-    /* 3) Check general knowledge for seller/domain first */
+    /* 3) General knowledge about seller/domain */
     const knowledgePrompt = `
 You are a product trust evaluator AI.
 Based on your general knowledge, answer the following:
@@ -137,10 +127,10 @@ Return JSON ONLY:
     const knowledgeText = knowledgeResponse.output?.[0]?.content?.[0]?.text || "{}";
     const knowledgeData = safeJSONParse(knowledgeText, {});
 
+    /* 4) Web searches if unknown */
     let sellerResults = [];
     let domainResults = [];
 
-    /* 4) Search seller/domain if unknown */
     if (!knowledgeData.sellerKnown && productInfo.seller) {
       sellerResults = await braveSearch(
         `"${productInfo.seller}" reviews OR complaint OR scam OR fraud OR "customer feedback"`,
@@ -155,13 +145,11 @@ Return JSON ONLY:
       );
     }
 
-    /* 5) Always search product reviews/issues */
     const productResults = await braveSearch(
       `"${productInfo.title}" reviews OR rating OR complaint OR fake OR scam OR refund OR defect OR broken`,
       7
     );
 
-    /* Combine results for GPT prompt */
     const formatResults = (arr) =>
       arr
         .map(
@@ -170,6 +158,7 @@ Return JSON ONLY:
         )
         .join("\n\n");
 
+    /* 5) Final trust evaluation via AI */
     const finalPrompt = `
 You are a product trust evaluator AI.
 
@@ -219,7 +208,12 @@ Return JSON ONLY:
     const finalText = finalResponse.output?.[0]?.content?.[0]?.text || "{}";
     const evaluation = safeJSONParse(finalText, {});
 
-    return new Response(JSON.stringify({ aiResult: evaluation }), { status: 200 });
+    /* 6) Return screenshot + AI evaluation together */
+    return new Response(
+      JSON.stringify({ base64: screenshotBase64, aiResult: evaluation }),
+      { status: 200 }
+    );
+
   } catch (err) {
     console.error("API ERROR:", err);
     return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
