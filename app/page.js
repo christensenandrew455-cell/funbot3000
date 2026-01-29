@@ -40,27 +40,18 @@ export default function Home() {
 
     setLoading(true);
     try {
-      // 1) Fetch screenshot first
-      const screenshotRes = await fetch("/api/screenshot", {
+      // Fetch AI analysis and screenshot in one request
+      const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: normalizedUrl }),
       });
 
-      if (!screenshotRes.ok) throw new Error("Screenshot request failed");
-      const screenshotData = await screenshotRes.json();
-      setScreenshot(screenshotData.base64);
+      if (!res.ok) throw new Error("Request failed");
+      const data = await res.json();
 
-      // 2) Fetch AI analysis
-      const aiRes = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: normalizedUrl }),
-      });
-
-      if (!aiRes.ok) throw new Error("AI request failed");
-      const aiData = await aiRes.json();
-      setResult(aiData.aiResult);
+      setScreenshot(data.base64 || null); // screenshot base64
+      setResult(data.aiResult || null);    // AI evaluation
     } catch (err) {
       console.error(err);
       setError("Something went wrong. Try again.");
@@ -116,7 +107,7 @@ export default function Home() {
 
         {error && <p style={styles.error}>{error}</p>}
 
-        {/* NEW: Display screenshot before AI results */}
+        {/* NEW: Display screenshot temporarily */}
         {screenshot && (
           <div style={{ margin: "24px 0", textAlign: "center" }}>
             <h4>Product Screenshot:</h4>
@@ -186,95 +177,21 @@ export default function Home() {
 }
 
 const styles = {
-  container: {
-    minHeight: "100vh",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    background: "#f5f7fb",
-    padding: 20,
-    gap: 24,
-  },
-  card: {
-    background: "#fff",
-    padding: 32,
-    borderRadius: 16,
-    width: "100%",
-    maxWidth: 540,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
-  },
-  cardFacts: {
-    background: "#fff",
-    padding: 40,
-    borderRadius: 16,
-    width: "100%",
-    maxWidth: 540,
-    boxShadow: "0 12px 36px rgba(0,0,0,0.12)",
-    marginTop: 16,
-  },
-  instructions: {
-    marginBottom: 28,
-    textAlign: "center",
-  },
-  heroTitle: {
-    fontSize: 28,
-    fontWeight: 800,
-    marginBottom: 10,
-  },
-  heroSubtitle: {
-    fontSize: 15,
-    color: "#555",
-    marginBottom: 20,
-  },
-  steps: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-    textAlign: "left",
-    fontSize: 14,
-  },
-  step: {
-    background: "#f9fafb",
-    padding: 10,
-    borderRadius: 8,
-  },
+  container: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", background: "#f5f7fb", padding: 20, gap: 24 },
+  card: { background: "#fff", padding: 32, borderRadius: 16, width: "100%", maxWidth: 540, boxShadow: "0 10px 30px rgba(0,0,0,0.1)" },
+  cardFacts: { background: "#fff", padding: 40, borderRadius: 16, width: "100%", maxWidth: 540, boxShadow: "0 12px 36px rgba(0,0,0,0.12)", marginTop: 16 },
+  instructions: { marginBottom: 28, textAlign: "center" },
+  heroTitle: { fontSize: 28, fontWeight: 800, marginBottom: 10 },
+  heroSubtitle: { fontSize: 15, color: "#555", marginBottom: 20 },
+  steps: { display: "flex", flexDirection: "column", gap: 8, textAlign: "left", fontSize: 14 },
+  step: { background: "#f9fafb", padding: 10, borderRadius: 8 },
   form: { display: "flex", flexDirection: "column", gap: 12 },
   input: { padding: 14, fontSize: 16, borderRadius: 10, border: "1px solid #ddd" },
-  button: {
-    padding: 14,
-    fontSize: 16,
-    borderRadius: 10,
-    border: "none",
-    cursor: "pointer",
-    background: "#4A6CF7",
-    color: "#fff",
-    fontWeight: 600,
-  },
-  helperText: {
-    fontSize: 12,
-    color: "#666",
-    textAlign: "center",
-  },
-  factsTitle: {
-    fontSize: 26,
-    fontWeight: 700,
-    marginBottom: 24,
-    textAlign: "center",
-  },
-  factsList: {
-    listStyle: "disc",
-    paddingLeft: 24,
-    fontSize: 16,
-    color: "#333",
-    lineHeight: 2,
-  },
+  button: { padding: 14, fontSize: 16, borderRadius: 10, border: "none", cursor: "pointer", background: "#4A6CF7", color: "#fff", fontWeight: 600 },
+  helperText: { fontSize: 12, color: "#666", textAlign: "center" },
+  factsTitle: { fontSize: 26, fontWeight: 700, marginBottom: 24, textAlign: "center" },
+  factsList: { listStyle: "disc", paddingLeft: 24, fontSize: 16, color: "#333", lineHeight: 2 },
   error: { color: "red", marginTop: 12, textAlign: "center" },
-  verdict: (status) => ({
-    fontSize: 28,
-    fontWeight: 900,
-    color: status === "good" ? "#16a34a" : "#dc2626",
-    textAlign: "center",
-    marginBottom: 24,
-  }),
+  verdict: (status) => ({ fontSize: 28, fontWeight: 900, color: status === "good" ? "#16a34a" : "#dc2626", textAlign: "center", marginBottom: 24 }),
   section: { marginBottom: 18 },
 };
