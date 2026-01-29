@@ -24,11 +24,13 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
+  const [screenshot, setScreenshot] = useState(null); // NEW
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
     setResult(null);
+    setScreenshot(null);
 
     const normalizedUrl = normalizeUrl(url);
     if (!normalizedUrl) {
@@ -38,16 +40,27 @@ export default function Home() {
 
     setLoading(true);
     try {
-      const res = await fetch("/api/generate", {
+      // 1) Fetch screenshot first
+      const screenshotRes = await fetch("/api/screenshot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: normalizedUrl }),
       });
 
-      if (!res.ok) throw new Error("API request failed");
+      if (!screenshotRes.ok) throw new Error("Screenshot request failed");
+      const screenshotData = await screenshotRes.json();
+      setScreenshot(screenshotData.base64);
 
-      const data = await res.json();
-      setResult(data.aiResult);
+      // 2) Fetch AI analysis
+      const aiRes = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: normalizedUrl }),
+      });
+
+      if (!aiRes.ok) throw new Error("AI request failed");
+      const aiData = await aiRes.json();
+      setResult(aiData.aiResult);
     } catch (err) {
       console.error(err);
       setError("Something went wrong. Try again.");
@@ -58,10 +71,8 @@ export default function Home() {
 
   return (
     <div style={styles.container}>
-
-      {/* MAIN INPUT / ANALYZE CARD */}
       <div style={styles.card}>
-        {!result && (
+        {!result && !screenshot && (
           <div style={styles.instructions}>
             <h1 style={styles.heroTitle}>
               Found a product that doesn’t look right?
@@ -76,8 +87,7 @@ export default function Home() {
                 <strong>1.</strong> Find a product that looks suspicious or overpriced
               </div>
               <div style={styles.step}>
-                <strong>2.</strong> Copy the <strong>full product link</strong>  
-                (Ctrl + C on desktop, or tap and copy on mobile)
+                <strong>2.</strong> Copy the <strong>full product link</strong>
               </div>
               <div style={styles.step}>
                 <strong>3.</strong> Paste it below and press <strong>Analyze</strong>
@@ -105,6 +115,18 @@ export default function Home() {
         )}
 
         {error && <p style={styles.error}>{error}</p>}
+
+        {/* NEW: Display screenshot before AI results */}
+        {screenshot && (
+          <div style={{ margin: "24px 0", textAlign: "center" }}>
+            <h4>Product Screenshot:</h4>
+            <img
+              src={`data:image/png;base64,${screenshot}`}
+              alt="Product screenshot"
+              style={{ maxWidth: "100%", borderRadius: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
+            />
+          </div>
+        )}
 
         {result && (
           <>
@@ -149,7 +171,6 @@ export default function Home() {
         )}
       </div>
 
-      {/* WHY IT MATTERS CARD - SEPARATE WHITE BOX */}
       <div style={styles.cardFacts}>
         <h2 style={styles.factsTitle}>Why It Matters</h2>
         <ul style={styles.factsList}>
@@ -160,7 +181,6 @@ export default function Home() {
           <li>We aim to help people avoid these scams and make smarter purchases.</li>
         </ul>
       </div>
-
     </div>
   );
 }
@@ -173,7 +193,7 @@ const styles = {
     alignItems: "center",
     background: "#f5f7fb",
     padding: 20,
-    gap: 24, // space between cards
+    gap: 24,
   },
   card: {
     background: "#fff",
@@ -185,7 +205,7 @@ const styles = {
   },
   cardFacts: {
     background: "#fff",
-    padding: 40,        // bigger padding to make card taller
+    padding: 40,
     borderRadius: 16,
     width: "100%",
     maxWidth: 540,
@@ -236,7 +256,7 @@ const styles = {
     textAlign: "center",
   },
   factsTitle: {
-    fontSize: 26,       // bigger
+    fontSize: 26,
     fontWeight: 700,
     marginBottom: 24,
     textAlign: "center",
@@ -244,9 +264,9 @@ const styles = {
   factsList: {
     listStyle: "disc",
     paddingLeft: 24,
-    fontSize: 16,       // bigger, easier to read
+    fontSize: 16,
     color: "#333",
-    lineHeight: 2,      // more spacing
+    lineHeight: 2,
   },
   error: { color: "red", marginTop: 12, textAlign: "center" },
   verdict: (status) => ({
