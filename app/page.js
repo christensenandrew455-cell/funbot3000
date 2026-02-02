@@ -78,7 +78,7 @@ export default function Home() {
                 <strong>1.</strong> Find a product that looks suspicious or overpriced
               </div>
               <div style={styles.step}>
-                <strong>2.</strong> Copy the <strong>full product link</strong>
+                <strong>2.</strong> Copy the <strong>full link from the product page </strong>
               </div>
               <div style={styles.step}>
                 <strong>3.</strong> Paste it below and press <strong>Analyze</strong>
