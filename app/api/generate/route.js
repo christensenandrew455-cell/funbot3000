@@ -35,6 +35,7 @@ async function braveSearch(query, size = 5) {
   try {
     const res = await fetch(
       `https://api.search.brave.com/v1/web/search?q=${encodeURIComponent(query)}&size=${size}`,
+
       {
         headers: {
           Accept: "application/json",
@@ -58,6 +59,54 @@ function mapIssues(results = []) {
     frequency: "medium",
     severity: "medium",
   }));
+}
+
+function parsePrice(text = "") {
+  if (!text) return null;
+  const match = text.match(/\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)/);
+  if (!match) return null;
+  const normalized = match[1].replace(/,/g, "");
+  const value = Number.parseFloat(normalized);
+  return Number.isFinite(value) ? value : null;
+}
+
+function buildComparablePrices(results = []) {
+  return results
+    .map((result) => {
+      const price = parsePrice(result?.snippet || "") ?? parsePrice(result?.title || "");
+      if (!price) return null;
+      return {
+        title: result?.title || "Unknown listing",
+        url: result?.url || null,
+        price,
+        snippet: result?.snippet || "",
+      };
+    })
+    .filter(Boolean);
+}
+
+function summarizePrices(prices = []) {
+  if (!prices.length) {
+    return {
+      count: 0,
+      min: null,
+      max: null,
+      median: null,
+    };
+  }
+  const sorted = [...prices].sort((a, b) => a - b);
+  const count = sorted.length;
+  const mid = Math.floor(count / 2);
+  const median =
+    count % 2 === 0
+      ? Number(((sorted[mid - 1] + sorted[mid]) / 2).toFixed(2))
+      : sorted[mid];
+  return {
+    count,
+    min: sorted[0],
+    max: sorted[sorted.length - 1],
+    median,
+  };
 }
 
 /* ===================== API ===================== */
@@ -85,44 +134,7 @@ export async function POST(req) {
 Extract ONLY information that is explicitly visible.
 
 Rules:
-- Do NOT guess
-- Do NOT infer missing data
-- If unclear or missing, return null
-- Numbers must be visible as numbers
-
-Context:
-URL: ${url}
-Domain: ${domain}
-
-Return JSON ONLY:
-{
-  "title": string | null,
-  "seller": string | null,
-  "price": string | null,
-  "features": string[],
-  "stars": number | null,
-  "reviewCount": number | null
-}
-`;
-
-    const extractResponse = await openai.responses.create({
-      model: "gpt-4o-mini",
-      input: [
-        {
-          role: "user",
-          content: [
-            { type: "input_text", text: extractPrompt },
-            {
-              type: "input_image",
-              image_url: `data:image/png;base64,${screenshotBase64}`,
-            },
-          ],
-        },
-      ],
-    });
-
-    const extractText =
-      extractResponse.output?.[0]?.content?.[0]?.text ?? "{}";
+@@ -126,71 +174,87 @@ Return JSON ONLY:
 
     const productInfo = safeJSONParse(extractText, { features: [] });
 
@@ -148,11 +160,25 @@ Return JSON ONLY:
         )
       : [];
 
+    const priceResults = productInfo.title
+      ? await braveSearch(`"${productInfo.title}" price OR "buy"`, 6)
+      : [];
+
+    const comparablePrices = buildComparablePrices(priceResults);
+    const priceStats = summarizePrices(
+      comparablePrices.map((entry) => entry.price)
+    );
+
     /* ---------- 4) STRUCTURE EVIDENCE ---------- */
     const structuredEvidence = {
       seller_issues: mapIssues(sellerResults),
       domain_issues: mapIssues(domainResults),
       product_issues: mapIssues(productResults),
+      price_checks: {
+        product_price: productInfo.price || null,
+        comparable_prices: comparablePrices,
+        price_stats: priceStats,
+      },
       positive_signals: [],
       evidence_strength: "moderate",
     };
@@ -169,6 +195,8 @@ Return JSON ONLY:
       return new Response(
         JSON.stringify({
           base64: screenshotBase64,
+          productInfo,
+          priceComparisons: comparablePrices,
           aiResult: {
             title,
             status: "uncertain",
@@ -194,22 +222,7 @@ Return JSON ONLY:
       );
     }
 
-    /* ---------- 6) FINAL EVALUATION ---------- */
-    const finalPrompt = `
-You are a conservative product trust evaluator.
-
-Rules:
-- Use ONLY the evidence provided
-- Penalize missing or weak data
-- Never invent facts
-- If uncertain, say so explicitly
-
-Product info:
-${JSON.stringify(productInfo, null, 2)}
-
-Structured evidence:
-${JSON.stringify(structuredEvidence, null, 2)}
-
+@@ -213,36 +277,38 @@ ${JSON.stringify(structuredEvidence, null, 2)}
 Return JSON ONLY:
 {
   "title": string,
@@ -235,6 +248,8 @@ Return JSON ONLY:
     return new Response(
       JSON.stringify({
         base64: screenshotBase64,
+        productInfo,
+        priceComparisons: comparablePrices,
         aiResult: evaluation,
       }),
       { status: 200 }
