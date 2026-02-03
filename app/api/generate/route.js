@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { OpenAI } from "openai";
+import cheerio from "cheerio";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -30,20 +31,72 @@ async function braveSearch(query, size = 7) {
   }
 }
 
-function extractJSONObject(text = "") {
-  const match = text
-    .replace(/```json/gi, "")
-    .replace(/```/g, "")
-    .match(/\{[\s\S]*\}/);
-  return match?.[0] ?? null;
+function getResponseText(res) {
+  if (res.output_text) return res.output_text;
+  for (const msg of res.output || []) {
+    for (const c of msg.content || []) {
+      if (c.text) return c.text;
+    }
+  }
+  return "";
 }
 
 function safeJSONParse(text, fallback = {}) {
   try {
-    const json = extractJSONObject(text);
-    return json ? JSON.parse(json) : fallback;
+    const match = text
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .match(/\{[\s\S]*\}/);
+    return match ? JSON.parse(match[0]) : fallback;
   } catch {
     return fallback;
+  }
+}
+
+/* ===================== HTML EXTRACTOR ===================== */
+
+async function extractFromHTML(url) {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        Accept: "text/html",
+      },
+    });
+
+    if (!res.ok) return null;
+
+    const html = await res.text();
+    const $ = cheerio.load(html);
+
+    const title =
+      $('meta[property="og:title"]').attr("content") ||
+      $("title").first().text() ||
+      null;
+
+    let price =
+      $('meta[property="product:price:amount"]').attr("content") ||
+      $('[itemprop="price"]').attr("content") ||
+      $('[class*="price"]').first().text() ||
+      null;
+
+    if (price) price = price.replace(/\s+/g, " ").trim();
+
+    const seller =
+      $('[itemprop="brand"]').text() ||
+      $('meta[property="og:site_name"]').attr("content") ||
+      null;
+
+    return {
+      title: title || null,
+      price: price || null,
+      seller: seller || null,
+      platform: new URL(url).hostname.replace("www.", ""),
+      claims: [],
+      source: "html",
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -58,23 +111,24 @@ export async function POST(req) {
 
     const domain = new URL(url).hostname.replace("www.", "");
 
-    /* ---------- 1. BRAVE SEARCH ---------- */
+    // 1. HTML FIRST
+    let productInfo = await extractFromHTML(url);
 
-    const urlResults = await braveSearch(`"${url}"`);
-    const domainResults = await braveSearch(`${domain} review OR scam OR fraud`);
-    const generalResults = await braveSearch(url);
+    // 2. FALLBACK TO BRAVE + AI
+    if (!productInfo || !productInfo.title) {
+      const results = await braveSearch(
+        `${domain} product review price scam`
+      );
 
-    const combinedSnippets = [...urlResults, ...generalResults, ...domainResults]
-      .map(r => `${r.title} — ${r.snippet}`)
-      .join("\n");
+      const snippets = results
+        .map(r => `${r.title} — ${r.snippet}`)
+        .join("\n");
 
-    /* ---------- 2. EXTRACT PRODUCT INFO ---------- */
-
-    const extractPrompt = `
-Extract factual product info.
+      const extractPrompt = `
+Extract factual product info. Do NOT guess.
 
 Text:
-${combinedSnippets}
+${snippets}
 
 Return JSON ONLY:
 {
@@ -86,18 +140,19 @@ Return JSON ONLY:
 }
 `;
 
-    const extractResponse = await openai.responses.create({
-      model: "gpt-4o-mini",
-      input: extractPrompt,
-    });
+      const extractResponse = await openai.responses.create({
+        model: "gpt-4o-mini",
+        input: extractPrompt,
+      });
 
-    const productInfo = safeJSONParse(
-      extractResponse.output?.[0]?.content?.[0]?.text,
-      { claims: [] }
-    );
+      productInfo = safeJSONParse(
+        getResponseText(extractResponse),
+        { claims: [] }
+      );
+      productInfo.source = "brave";
+    }
 
-    /* ---------- 3. REASONING ---------- */
-
+    // 3. REASONING
     const reasoningPrompt = `
 Evaluate product legitimacy.
 
@@ -119,28 +174,27 @@ Return JSON ONLY:
     });
 
     const analysis = safeJSONParse(
-      reasoningResponse.output?.[0]?.content?.[0]?.text,
+      getResponseText(reasoningResponse),
       {}
     );
 
-    /* ---------- 4. UI ADAPTER (THIS WAS MISSING) ---------- */
-
+    // 4. UI ADAPTER
     const aiResult = {
       title: productInfo.title,
 
       websiteTrust: {
         score: analysis.scam > 60 ? 1 : analysis.scam > 30 ? 3 : 5,
-        reason: "Based on domain reputation and reported issues.",
+        reason: "Domain and reputation signals.",
       },
 
       sellerTrust: {
         score: analysis.dropship > 60 ? 2 : 4,
-        reason: "Seller behavior and sourcing indicators.",
+        reason: "Sourcing indicators.",
       },
 
       productTrust: {
         score: analysis.overpriced > 60 ? 2 : 4,
-        reason: "Pricing and claim realism.",
+        reason: "Price vs market expectations.",
       },
 
       overall: {
@@ -152,10 +206,7 @@ Return JSON ONLY:
     };
 
     return new Response(
-      JSON.stringify({
-        base64: null,       // screenshot disabled, but UI-safe
-        aiResult,
-      }),
+      JSON.stringify({ base64: null, aiResult }),
       { status: 200 }
     );
   } catch (err) {
