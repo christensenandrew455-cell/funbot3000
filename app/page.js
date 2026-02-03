@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 
-/* ---------------- HELPERS ---------------- */
-
 function normalizeUrl(input) {
   if (!input) return "";
   if (/^https?:\/\//i.test(input)) return input;
@@ -21,25 +19,18 @@ function Stars({ score }) {
   );
 }
 
-/* ---------------- PAGE ---------------- */
-
 export default function Home() {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
-  const [screenshot, setScreenshot] = useState(null);
-  const [productInfo, setProductInfo] = useState(null);
-  const [priceComparisons, setPriceComparisons] = useState([]);
+  const [screenshot, setScreenshot] = useState(null); // NEW
 
   async function handleSubmit(e) {
     e.preventDefault();
-
     setError("");
     setResult(null);
     setScreenshot(null);
-    setProductInfo(null);
-    setPriceComparisons([]);
 
     const normalizedUrl = normalizeUrl(url);
     if (!normalizedUrl) {
@@ -48,8 +39,8 @@ export default function Home() {
     }
 
     setLoading(true);
-
     try {
+      // Fetch AI analysis and screenshot in one request
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -57,13 +48,10 @@ export default function Home() {
       });
 
       if (!res.ok) throw new Error("Request failed");
-
       const data = await res.json();
 
-      setScreenshot(data.base64 || null);
-      setResult(data.aiResult || null);
-      setProductInfo(data.productInfo || null);
-      setPriceComparisons(data.priceComparisons || []);
+      setScreenshot(data.base64 || null); // screenshot base64
+      setResult(data.aiResult || null);    // AI evaluation
     } catch (err) {
       console.error(err);
       setError("Something went wrong. Try again.");
@@ -81,130 +69,65 @@ export default function Home() {
               Found a product that doesn’t look right?
             </h1>
             <p style={styles.heroSubtitle}>
-              Drop the product link below and we’ll analyze it for scams, fake
-              quality, and overpriced listings — <strong>free</strong>.
+              Drop the product link below and we’ll analyze it for scams, fake quality,
+              and overpriced listings — <strong>free</strong>.
             </p>
 
             <div style={styles.steps}>
               <div style={styles.step}>
-                <strong>1.</strong> Find a product that looks suspicious
+                <strong>1.</strong> Find a product that looks suspicious or overpriced
               </div>
               <div style={styles.step}>
-                <strong>2.</strong> Copy the product link
+                <strong>2.</strong> Copy the <strong>full link from the product page </strong>
               </div>
               <div style={styles.step}>
-                <strong>3.</strong> Paste it below and analyze
+                <strong>3.</strong> Paste it below and press <strong>Analyze</strong>
               </div>
             </div>
-
-            <form onSubmit={handleSubmit} style={styles.form}>
-              <input
-                style={styles.input}
-                placeholder="Paste product URL here"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-              />
-              <button style={styles.button} disabled={loading}>
-                {loading ? "Analyzing…" : "Analyze Product"}
-              </button>
-            </form>
-
-            {error && <p style={styles.error}>{error}</p>}
           </div>
         )}
 
-        {/* SCREENSHOT PREVIEW */}
+        {!result && (
+          <form onSubmit={handleSubmit} style={styles.form}>
+            <input
+              type="url"
+              placeholder="Paste the full product link here…"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              style={styles.input}
+            />
+            <button type="submit" style={styles.button} disabled={loading}>
+              {loading ? "Processing..." : "Analyze Product"}
+            </button>
+            <p style={styles.helperText}>
+              Copy the link from the product page → paste it here → analyze.
+            </p>
+          </form>
+        )}
+
+        {error && <p style={styles.error}>{error}</p>}
+
+        {/* NEW: Display screenshot temporarily */}
         {screenshot && (
           <div style={{ margin: "24px 0", textAlign: "center" }}>
-            <h4>Product Screenshot</h4>
+            <h4>Product Screenshot:</h4>
             <img
               src={`data:image/png;base64,${screenshot}`}
               alt="Product screenshot"
-              style={{
-                maxWidth: "100%",
-                borderRadius: 12,
-                boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-              }}
+              style={{ maxWidth: "100%", borderRadius: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
             />
           </div>
         )}
 
-        {/* RESULTS */}
         {result && (
           <>
             <div style={styles.verdict(result.status)}>
-              {result.status === "good"
-                ? "GOOD PRODUCT"
-                : "POTENTIAL SCAM"}
+              {result.status === "good" ? "GOOD PRODUCT" : "POTENTIAL SCAM"}
             </div>
 
             <div style={styles.section}>
               <h3>{result.title || "Product Title Not Detected"}</h3>
             </div>
-
-            {productInfo && (
-              <div style={styles.section}>
-                <h4>Extracted Details</h4>
-                <div style={styles.detailGrid}>
-                  <div>
-                    <strong>Seller</strong>
-                    <div>{productInfo.seller || "Not detected"}</div>
-                  </div>
-                  <div>
-                    <strong>Price</strong>
-                    <div>{productInfo.price || "Not detected"}</div>
-                  </div>
-                  <div>
-                    <strong>Rating</strong>
-                    <div>
-                      {productInfo.stars
-                        ? `${productInfo.stars}★`
-                        : "Not detected"}
-                    </div>
-                  </div>
-                  <div>
-                    <strong>Reviews</strong>
-                    <div>{productInfo.reviewCount ?? "Not detected"}</div>
-                  </div>
-                </div>
-
-                {productInfo.features?.length ? (
-                  <ul style={styles.featuresList}>
-                    {productInfo.features.map((f) => (
-                      <li key={f}>{f}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p style={styles.muted}>
-                    No visible product features detected.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {!!priceComparisons.length && (
-              <div style={styles.section}>
-                <h4>Price Checks</h4>
-                <div style={styles.priceList}>
-                  {priceComparisons.slice(0, 4).map((p, i) => (
-                    <div key={i} style={styles.priceItem}>
-                      <div style={styles.priceTitle}>{p.title}</div>
-                      <div style={styles.priceMeta}>
-                        <span>${p.price?.toFixed?.(2)}</span>
-                        {p.url && (
-                          <a href={p.url} target="_blank" rel="noreferrer">
-                            View
-                          </a>
-                        )}
-                      </div>
-                      {p.snippet && (
-                        <div style={styles.priceSnippet}>{p.snippet}</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             <div style={styles.section}>
               <h4>Website Trust</h4>
@@ -223,76 +146,52 @@ export default function Home() {
               <Stars score={result.productTrust.score} />
               <p>{result.productTrust.reason}</p>
             </div>
+
+            <div
+              style={{
+                ...styles.section,
+                borderTop: "1px solid #eee",
+                paddingTop: 16,
+              }}
+            >
+              <h3>Overall Rating</h3>
+              <Stars score={result.overall.score} />
+              <p>{result.overall.reason}</p>
+            </div>
           </>
         )}
+      </div>
+
+      <div style={styles.cardFacts}>
+        <h2 style={styles.factsTitle}>Why It Matters</h2>
+        <ul style={styles.factsList}>
+          <li>Nearly <strong>1 in 3 shoppers</strong> report being scammed online.</li>
+          <li>Many Amazon and online listings are dropshippers reselling products at double or triple the original price.</li>
+          <li>Fake or manipulated reviews are common, making it hard to trust product ratings.</li>
+          <li>Online scams cost consumers and businesses billions every year.</li>
+          <li>We aim to help people avoid these scams and make smarter purchases.</li>
+        </ul>
       </div>
     </div>
   );
 }
 
-/* ---------------- STYLES ---------------- */
-
 const styles = {
-  container: {
-    minHeight: "100vh",
-    display: "flex",
-    justifyContent: "center",
-    background: "#f5f7fb",
-    padding: 20,
-  },
-  card: {
-    background: "#fff",
-    padding: 32,
-    borderRadius: 16,
-    width: "100%",
-    maxWidth: 540,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
-  },
-  instructions: { textAlign: "center" },
-  heroTitle: { fontSize: 28, fontWeight: 800 },
+  container: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", background: "#f5f7fb", padding: 20, gap: 24 },
+  card: { background: "#fff", padding: 32, borderRadius: 16, width: "100%", maxWidth: 540, boxShadow: "0 10px 30px rgba(0,0,0,0.1)" },
+  cardFacts: { background: "#fff", padding: 40, borderRadius: 16, width: "100%", maxWidth: 540, boxShadow: "0 12px 36px rgba(0,0,0,0.12)", marginTop: 16 },
+  instructions: { marginBottom: 28, textAlign: "center" },
+  heroTitle: { fontSize: 28, fontWeight: 800, marginBottom: 10 },
   heroSubtitle: { fontSize: 15, color: "#555", marginBottom: 20 },
-  steps: { display: "flex", flexDirection: "column", gap: 8 },
+  steps: { display: "flex", flexDirection: "column", gap: 8, textAlign: "left", fontSize: 14 },
   step: { background: "#f9fafb", padding: 10, borderRadius: 8 },
-  form: { display: "flex", flexDirection: "column", gap: 12, marginTop: 16 },
+  form: { display: "flex", flexDirection: "column", gap: 12 },
   input: { padding: 14, fontSize: 16, borderRadius: 10, border: "1px solid #ddd" },
-  button: {
-    padding: 14,
-    fontSize: 16,
-    borderRadius: 10,
-    background: "#4A6CF7",
-    color: "#fff",
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-  error: { color: "red", marginTop: 12 },
-  verdict: (status) => ({
-    fontSize: 28,
-    fontWeight: 900,
-    textAlign: "center",
-    color: status === "good" ? "#16a34a" : "#dc2626",
-    marginBottom: 24,
-  }),
+  button: { padding: 14, fontSize: 16, borderRadius: 10, border: "none", cursor: "pointer", background: "#4A6CF7", color: "#fff", fontWeight: 600 },
+  helperText: { fontSize: 12, color: "#666", textAlign: "center" },
+  factsTitle: { fontSize: 26, fontWeight: 700, marginBottom: 24, textAlign: "center" },
+  factsList: { listStyle: "disc", paddingLeft: 24, fontSize: 16, color: "#333", lineHeight: 2 },
+  error: { color: "red", marginTop: 12, textAlign: "center" },
+  verdict: (status) => ({ fontSize: 28, fontWeight: 900, color: status === "good" ? "#16a34a" : "#dc2626", textAlign: "center", marginBottom: 24 }),
   section: { marginBottom: 18 },
-  detailGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, 1fr)",
-    gap: 12,
-    marginTop: 12,
-  },
-  featuresList: { marginTop: 12, paddingLeft: 18 },
-  muted: { color: "#6b7280", fontSize: 13 },
-  priceList: { display: "grid", gap: 12 },
-  priceItem: {
-    border: "1px solid #e5e7eb",
-    borderRadius: 10,
-    padding: 12,
-    background: "#f9fafb",
-  },
-  priceTitle: { fontWeight: 600 },
-  priceMeta: {
-    display: "flex",
-    justifyContent: "space-between",
-    fontSize: 13,
-  },
-  priceSnippet: { fontSize: 12, color: "#4b5563" },
 };
