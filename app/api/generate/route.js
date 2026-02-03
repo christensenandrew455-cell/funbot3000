@@ -80,12 +80,21 @@ async function extractFromHTML(url) {
       $('[class*="price"]').first().text() ||
       null;
 
-    if (price) price = price.replace(/\s+/g, " ").trim();
+    // ✅ PRICE NORMALIZATION (FIXED)
+    if (price) {
+      const match = price.match(/\$?\d+(\.\d{2})?/);
+      price = match ? match[0] : null;
+    }
 
-    const seller =
+    // ✅ AMAZON-AWARE SELLER EXTRACTION
+    let seller =
+      $("#sellerProfileTriggerId").text() ||
+      $("#bylineInfo").text() ||
       $('[itemprop="brand"]').text() ||
       $('meta[property="og:site_name"]').attr("content") ||
       null;
+
+    if (seller) seller = seller.replace(/\s+/g, " ").trim();
 
     return {
       title: title || null,
