@@ -12,6 +12,7 @@
     "react": "latest",
     "react-dom": "latest",
     "openai": "latest",
-    "node-fetch": "latest"
+    "node-fetch": "latest",
+    "cheerio": "latest"
   }
 }
