@@ -43,7 +43,7 @@ async function braveSearch(query, size = 5) {
   }
 }
 
-/* Optional: GPT-4o Mini Search Preview */
+/* Optional GPT-4o Mini Search Preview */
 async function gptSearchPreview(query) {
   try {
     const resp = await openai.responses.create({
@@ -69,9 +69,7 @@ const formatResults = (arr) =>
 export async function POST(req) {
   try {
     const { url } = await req.json();
-    if (!url) {
-      return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
-    }
+    if (!url) return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
 
     const domain = new URL(url).hostname;
 
@@ -86,8 +84,10 @@ export async function POST(req) {
     const extractPrompt = `
 You are extracting factual information from a product page screenshot.
 
-Extract ONLY what is visible.
-Do not guess.
+Hints:
+- The page URL is ${url}, domain: ${domain}.
+- Use visible text and obvious info from the URL/domain to fill missing fields.
+- Return null ONLY if truly impossible to determine.
 
 Return JSON ONLY:
 {
@@ -107,35 +107,34 @@ Return JSON ONLY:
           role: "user",
           content: [
             { type: "input_text", text: extractPrompt },
-            {
-              type: "input_image",
-              image_url: `data:image/png;base64,${screenshotBase64}`,
-            },
+            { type: "input_image", image_url: `data:image/png;base64,${screenshotBase64}` },
           ],
         },
       ],
-      // temperature removed
     });
 
     const extractText = extractResponse.output?.[0]?.content?.[0]?.text || "{}";
-    const productInfo = safeJSONParse(extractText, {});
+    const productInfo = safeJSONParse(extractText, { features: [] });
 
-    /* 3) SEARCH (try GPT search preview, fallback to Brave) */
+    /* 3) SEARCH (GPT search preview with Brave fallback) */
     let sellerResults = [];
     let domainResults = [];
     let productResults = [];
 
     if (productInfo.seller) {
-      sellerResults = (await gptSearchPreview(`"${productInfo.seller}" reviews OR complaint OR scam OR fraud`)) 
-        || await braveSearch(`"${productInfo.seller}" reviews OR complaint OR scam OR fraud`, 7);
+      sellerResults =
+        (await gptSearchPreview(`"${productInfo.seller}" reviews OR complaint OR scam OR fraud`)) ||
+        (await braveSearch(`"${productInfo.seller}" reviews OR complaint OR scam OR fraud`, 7));
     }
 
-    domainResults = (await gptSearchPreview(`"${domain}" scam OR fraud OR legit OR review`))
-      || await braveSearch(`"${domain}" scam OR fraud OR legit OR review`, 7);
+    domainResults =
+      (await gptSearchPreview(`"${domain}" scam OR fraud OR legit OR review`)) ||
+      (await braveSearch(`"${domain}" scam OR fraud OR legit OR review`, 7));
 
     if (productInfo.title) {
-      productResults = (await gptSearchPreview(`"${productInfo.title}" reviews OR defect OR broken OR fake`))
-        || await braveSearch(`"${productInfo.title}" reviews OR defect OR broken OR fake`, 7);
+      productResults =
+        (await gptSearchPreview(`"${productInfo.title}" reviews OR defect OR broken OR fake`)) ||
+        (await braveSearch(`"${productInfo.title}" reviews OR defect OR broken OR fake`, 7));
     }
 
     /* 4) STRUCTURE EVIDENCE — o4-mini */
@@ -169,13 +168,18 @@ Return JSON ONLY:
     const structuredResponse = await openai.responses.create({
       model: "o4-mini",
       input: structurePrompt,
-      // temperature removed
     });
 
     const structuredText = structuredResponse.output?.[0]?.content?.[0]?.text || "{}";
-    const structuredEvidence = safeJSONParse(structuredText, {});
+    const structuredEvidence = safeJSONParse(structuredText, {
+      seller_issues: [],
+      domain_issues: [],
+      product_issues: [],
+      positive_signals: [],
+      evidence_strength: "weak",
+    });
 
-    /* 5) FINAL JUDGMENT — gpt-4.1 (reasoning) */
+    /* 5) FINAL JUDGMENT — gpt-4.1 */
     const finalPrompt = `
 You are a conservative product trust evaluator.
 
@@ -205,7 +209,6 @@ Return JSON ONLY:
     const finalResponse = await openai.responses.create({
       model: "gpt-4.1",
       input: finalPrompt,
-      temperature: 0.1,
     });
 
     const finalText = finalResponse.output?.[0]?.content?.[0]?.text || "{}";
@@ -221,8 +224,6 @@ Return JSON ONLY:
     );
   } catch (err) {
     console.error("API ERROR:", err);
-    return new Response(JSON.stringify({ error: "Server error" }), {
-      status: 500,
-    });
+    return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
   }
 }
