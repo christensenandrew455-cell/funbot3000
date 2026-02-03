@@ -22,7 +22,7 @@ function safeJSONParse(text, fallback = {}) {
   }
 }
 
-/* ----------------- Brave Search ----------------- */
+/* ----------------- Search ----------------- */
 async function braveSearch(query, size = 5) {
   if (!query || !BRAVE_API_KEY) return [];
   try {
@@ -43,14 +43,25 @@ async function braveSearch(query, size = 5) {
   }
 }
 
+/* Optional: GPT-4o Mini Search Preview */
+async function gptSearchPreview(query) {
+  try {
+    const resp = await openai.responses.create({
+      model: "gpt-4o-mini-search-preview",
+      input: `Search the web for factual info about: "${query}". Return top results in JSON [{title,url,snippet}]`,
+    });
+    const text = resp.output?.[0]?.content?.[0]?.text || "[]";
+    return safeJSONParse(text, []);
+  } catch {
+    return null;
+  }
+}
+
 const formatResults = (arr) =>
   arr
     .map(
       (r, i) =>
-        `Result ${i + 1}:
-Title: ${r.title}
-URL: ${r.url}
-Snippet: ${r.snippet || "N/A"}`
+        `Result ${i + 1}:\nTitle: ${r.title}\nURL: ${r.url}\nSnippet: ${r.snippet || "N/A"}`
     )
     .join("\n\n");
 
@@ -103,33 +114,29 @@ Return JSON ONLY:
           ],
         },
       ],
-      temperature: 0,
+      // temperature removed
     });
 
-    const extractText =
-      extractResponse.output?.[0]?.content?.[0]?.text || "{}";
-
+    const extractText = extractResponse.output?.[0]?.content?.[0]?.text || "{}";
     const productInfo = safeJSONParse(extractText, {});
 
-    /* 3) ALWAYS SEARCH (no assumptions) */
-    const sellerResults = productInfo.seller
-      ? await braveSearch(
-          `"${productInfo.seller}" reviews OR complaint OR scam OR fraud`,
-          7
-        )
-      : [];
+    /* 3) SEARCH (try GPT search preview, fallback to Brave) */
+    let sellerResults = [];
+    let domainResults = [];
+    let productResults = [];
 
-    const domainResults = await braveSearch(
-      `"${domain}" scam OR fraud OR legit OR review`,
-      7
-    );
+    if (productInfo.seller) {
+      sellerResults = (await gptSearchPreview(`"${productInfo.seller}" reviews OR complaint OR scam OR fraud`)) 
+        || await braveSearch(`"${productInfo.seller}" reviews OR complaint OR scam OR fraud`, 7);
+    }
 
-    const productResults = productInfo.title
-      ? await braveSearch(
-          `"${productInfo.title}" reviews OR defect OR broken OR fake`,
-          7
-        )
-      : [];
+    domainResults = (await gptSearchPreview(`"${domain}" scam OR fraud OR legit OR review`))
+      || await braveSearch(`"${domain}" scam OR fraud OR legit OR review`, 7);
+
+    if (productInfo.title) {
+      productResults = (await gptSearchPreview(`"${productInfo.title}" reviews OR defect OR broken OR fake`))
+        || await braveSearch(`"${productInfo.title}" reviews OR defect OR broken OR fake`, 7);
+    }
 
     /* 4) STRUCTURE EVIDENCE — o4-mini */
     const structurePrompt = `
@@ -162,12 +169,10 @@ Return JSON ONLY:
     const structuredResponse = await openai.responses.create({
       model: "o4-mini",
       input: structurePrompt,
-      temperature: 0,
+      // temperature removed
     });
 
-    const structuredText =
-      structuredResponse.output?.[0]?.content?.[0]?.text || "{}";
-
+    const structuredText = structuredResponse.output?.[0]?.content?.[0]?.text || "{}";
     const structuredEvidence = safeJSONParse(structuredText, {});
 
     /* 5) FINAL JUDGMENT — gpt-4.1 (reasoning) */
@@ -203,9 +208,7 @@ Return JSON ONLY:
       temperature: 0.1,
     });
 
-    const finalText =
-      finalResponse.output?.[0]?.content?.[0]?.text || "{}";
-
+    const finalText = finalResponse.output?.[0]?.content?.[0]?.text || "{}";
     const evaluation = safeJSONParse(finalText, {});
 
     /* 6) RESPONSE */
