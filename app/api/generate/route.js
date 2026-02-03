@@ -64,23 +64,14 @@ export async function POST(req) {
     const domainResults = await braveSearch(`${domain} review OR scam OR fraud`);
     const generalResults = await braveSearch(url);
 
-    const combinedSnippets = [
-      ...urlResults,
-      ...generalResults,
-      ...domainResults,
-    ]
-      .map((r) => r.title + " — " + r.snippet)
+    const combinedSnippets = [...urlResults, ...generalResults, ...domainResults]
+      .map(r => `${r.title} — ${r.snippet}`)
       .join("\n");
 
     /* ---------- 2. EXTRACT PRODUCT INFO ---------- */
 
     const extractPrompt = `
-You are extracting factual product information.
-
-Rules:
-- Use ONLY the provided text
-- Do NOT guess
-- If missing, return null
+Extract factual product info.
 
 Text:
 ${combinedSnippets}
@@ -91,8 +82,7 @@ Return JSON ONLY:
   "price": string | null,
   "seller": string | null,
   "platform": string | null,
-  "claims": string[],
-  "category": string | null
+  "claims": string[]
 }
 `;
 
@@ -101,32 +91,24 @@ Return JSON ONLY:
       input: extractPrompt,
     });
 
-    const extractText =
-      extractResponse.output?.[0]?.content?.[0]?.text ?? "{}";
+    const productInfo = safeJSONParse(
+      extractResponse.output?.[0]?.content?.[0]?.text,
+      { claims: [] }
+    );
 
-    const productInfo = safeJSONParse(extractText, { claims: [] });
-
-    /* ---------- 3. DEEP REASONING ---------- */
+    /* ---------- 3. REASONING ---------- */
 
     const reasoningPrompt = `
-Evaluate the legitimacy of this product.
+Evaluate product legitimacy.
 
-Product data:
+Product:
 ${JSON.stringify(productInfo, null, 2)}
-
-Tasks:
-- Does it physically/scientifically do what it claims?
-- Is pricing likely inflated?
-- Is it likely dropshipped?
-- Is this a known scam category?
 
 Return JSON ONLY:
 {
-  "scamLikelihood": number, // 0–100
-  "overpricingLikelihood": number, // 0–100
-  "dropshipLikelihood": number, // 0–100
-  "keyConcerns": string[],
-  "betterAlternatives": string[],
+  "scam": number,
+  "overpriced": number,
+  "dropship": number,
   "confidence": "low" | "medium" | "high"
 }
 `;
@@ -136,16 +118,43 @@ Return JSON ONLY:
       input: reasoningPrompt,
     });
 
-    const reasoningText =
-      reasoningResponse.output?.[0]?.content?.[0]?.text ?? "{}";
+    const analysis = safeJSONParse(
+      reasoningResponse.output?.[0]?.content?.[0]?.text,
+      {}
+    );
 
-    const analysis = safeJSONParse(reasoningText, {});
+    /* ---------- 4. UI ADAPTER (THIS WAS MISSING) ---------- */
+
+    const aiResult = {
+      title: productInfo.title,
+
+      websiteTrust: {
+        score: analysis.scam > 60 ? 1 : analysis.scam > 30 ? 3 : 5,
+        reason: "Based on domain reputation and reported issues.",
+      },
+
+      sellerTrust: {
+        score: analysis.dropship > 60 ? 2 : 4,
+        reason: "Seller behavior and sourcing indicators.",
+      },
+
+      productTrust: {
+        score: analysis.overpriced > 60 ? 2 : 4,
+        reason: "Pricing and claim realism.",
+      },
+
+      overall: {
+        score: analysis.scam > 60 ? 1 : analysis.scam > 30 ? 3 : 5,
+        reason: "Aggregated risk signals.",
+      },
+
+      status: analysis.scam > 60 ? "bad" : "good",
+    };
 
     return new Response(
       JSON.stringify({
-        source: "brave+ai",
-        productInfo,
-        analysis,
+        base64: null,       // screenshot disabled, but UI-safe
+        aiResult,
       }),
       { status: 200 }
     );
