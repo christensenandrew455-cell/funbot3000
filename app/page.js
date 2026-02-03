@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-/* ===================== HELPERS ===================== */
+/* ---------------- HELPERS ---------------- */
 
 function normalizeUrl(input) {
   if (!input) return "";
@@ -21,7 +21,7 @@ function Stars({ score }) {
   );
 }
 
-/* ===================== PAGE ===================== */
+/* ---------------- PAGE ---------------- */
 
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -30,6 +30,7 @@ export default function Home() {
   const [result, setResult] = useState(null);
   const [screenshot, setScreenshot] = useState(null);
   const [productInfo, setProductInfo] = useState(null);
+  const [priceComparisons, setPriceComparisons] = useState([]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -38,6 +39,7 @@ export default function Home() {
     setResult(null);
     setScreenshot(null);
     setProductInfo(null);
+    setPriceComparisons([]);
 
     const normalizedUrl = normalizeUrl(url);
     if (!normalizedUrl) {
@@ -61,6 +63,7 @@ export default function Home() {
       setScreenshot(data.base64 || null);
       setResult(data.aiResult || null);
       setProductInfo(data.productInfo || null);
+      setPriceComparisons(data.priceComparisons || []);
     } catch (err) {
       console.error(err);
       setError("Something went wrong. Try again.");
@@ -110,6 +113,7 @@ export default function Home() {
           </div>
         )}
 
+        {/* SCREENSHOT PREVIEW */}
         {screenshot && (
           <div style={{ margin: "24px 0", textAlign: "center" }}>
             <h4>Product Screenshot</h4>
@@ -125,10 +129,13 @@ export default function Home() {
           </div>
         )}
 
+        {/* RESULTS */}
         {result && (
           <>
             <div style={styles.verdict(result.status)}>
-              {result.status === "good" ? "GOOD PRODUCT" : "POTENTIAL SCAM"}
+              {result.status === "good"
+                ? "GOOD PRODUCT"
+                : "POTENTIAL SCAM"}
             </div>
 
             <div style={styles.section}>
@@ -160,6 +167,42 @@ export default function Home() {
                     <div>{productInfo.reviewCount ?? "Not detected"}</div>
                   </div>
                 </div>
+
+                {productInfo.features?.length ? (
+                  <ul style={styles.featuresList}>
+                    {productInfo.features.map((f) => (
+                      <li key={f}>{f}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p style={styles.muted}>
+                    No visible product features detected.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {!!priceComparisons.length && (
+              <div style={styles.section}>
+                <h4>Price Checks</h4>
+                <div style={styles.priceList}>
+                  {priceComparisons.slice(0, 4).map((p, i) => (
+                    <div key={i} style={styles.priceItem}>
+                      <div style={styles.priceTitle}>{p.title}</div>
+                      <div style={styles.priceMeta}>
+                        <span>${p.price?.toFixed?.(2)}</span>
+                        {p.url && (
+                          <a href={p.url} target="_blank" rel="noreferrer">
+                            View
+                          </a>
+                        )}
+                      </div>
+                      {p.snippet && (
+                        <div style={styles.priceSnippet}>{p.snippet}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -187,7 +230,7 @@ export default function Home() {
   );
 }
 
-/* ===================== STYLES ===================== */
+/* ---------------- STYLES ---------------- */
 
 const styles = {
   container: {
@@ -211,12 +254,7 @@ const styles = {
   steps: { display: "flex", flexDirection: "column", gap: 8 },
   step: { background: "#f9fafb", padding: 10, borderRadius: 8 },
   form: { display: "flex", flexDirection: "column", gap: 12, marginTop: 16 },
-  input: {
-    padding: 14,
-    fontSize: 16,
-    borderRadius: 10,
-    border: "1px solid #ddd",
-  },
+  input: { padding: 14, fontSize: 16, borderRadius: 10, border: "1px solid #ddd" },
   button: {
     padding: 14,
     fontSize: 16,
@@ -241,4 +279,20 @@ const styles = {
     gap: 12,
     marginTop: 12,
   },
+  featuresList: { marginTop: 12, paddingLeft: 18 },
+  muted: { color: "#6b7280", fontSize: 13 },
+  priceList: { display: "grid", gap: 12 },
+  priceItem: {
+    border: "1px solid #e5e7eb",
+    borderRadius: 10,
+    padding: 12,
+    background: "#f9fafb",
+  },
+  priceTitle: { fontWeight: 600 },
+  priceMeta: {
+    display: "flex",
+    justifyContent: "space-between",
+    fontSize: 13,
+  },
+  priceSnippet: { fontSize: 12, color: "#4b5563" },
 };
