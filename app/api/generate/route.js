@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 
 import { OpenAI } from "openai";
-import cheerio from "cheerio";
+import * as cheerio from "cheerio";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
