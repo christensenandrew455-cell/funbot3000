@@ -3,10 +3,7 @@ export const runtime = "nodejs";
 import { OpenAI } from "openai";
 import { screenshotPage } from "@/lib/server/screenshot";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
 
 /* ----------------- Helpers ----------------- */
@@ -22,18 +19,12 @@ function safeJSONParse(text, fallback = {}) {
   }
 }
 
-/* ----------------- Search ----------------- */
 async function braveSearch(query, size = 5) {
   if (!query || !BRAVE_API_KEY) return [];
   try {
     const res = await fetch(
       `https://api.search.brave.com/v1/web/search?q=${encodeURIComponent(query)}&size=${size}`,
-      {
-        headers: {
-          Accept: "application/json",
-          "X-Subscription-Token": BRAVE_API_KEY,
-        },
-      }
+      { headers: { Accept: "application/json", "X-Subscription-Token": BRAVE_API_KEY } }
     );
     if (!res.ok) return [];
     const data = await res.json();
@@ -43,12 +34,16 @@ async function braveSearch(query, size = 5) {
   }
 }
 
-/* Optional GPT-4o Mini Search Preview */
 async function gptSearchPreview(query) {
   try {
     const resp = await openai.responses.create({
       model: "gpt-4o-mini-search-preview",
-      input: `Search the web for factual info about: "${query}". Return top results in JSON [{title,url,snippet}]`,
+      input: [
+        {
+          role: "user",
+          content: [{ type: "input_text", text: `Search the web for factual info about: "${query}". Return top results in JSON [{title,url,snippet}]` }],
+        },
+      ],
     });
     const text = resp.output?.[0]?.content?.[0]?.text || "[]";
     return safeJSONParse(text, []);
@@ -59,10 +54,7 @@ async function gptSearchPreview(query) {
 
 const formatResults = (arr) =>
   arr
-    .map(
-      (r, i) =>
-        `Result ${i + 1}:\nTitle: ${r.title}\nURL: ${r.url}\nSnippet: ${r.snippet || "N/A"}`
-    )
+    .map((r, i) => `Result ${i + 1}:\nTitle: ${r.title}\nURL: ${r.url}\nSnippet: ${r.snippet || "N/A"}`)
     .join("\n\n");
 
 /* ----------------- API ----------------- */
@@ -80,14 +72,14 @@ export async function POST(req) {
         : "",
     });
 
-    /* 2) PRODUCT EXTRACTION — gpt-4o-mini (vision) */
+    /* 2) PRODUCT EXTRACTION — GPT-4o-mini using URL + screenshot */
     const extractPrompt = `
-You are extracting factual information from a product page screenshot.
+Extract factual info from this product page.
 
 Hints:
-- The page URL is ${url}, domain: ${domain}.
-- Use visible text and obvious info from the URL/domain to fill missing fields.
-- Return null ONLY if truly impossible to determine.
+- URL: ${url}, domain: ${domain}
+- Use visible text from the screenshot if needed
+- Return null only if impossible
 
 Return JSON ONLY:
 {
@@ -116,10 +108,10 @@ Return JSON ONLY:
     const extractText = extractResponse.output?.[0]?.content?.[0]?.text || "{}";
     const productInfo = safeJSONParse(extractText, { features: [] });
 
-    /* 3) SEARCH (GPT search preview with Brave fallback) */
-    let sellerResults = [];
-    let domainResults = [];
-    let productResults = [];
+    console.log("PRODUCT INFO:", productInfo);
+
+    /* 3) SEARCH (GPT + Brave fallback) */
+    let sellerResults = [], domainResults = [], productResults = [];
 
     if (productInfo.seller) {
       sellerResults =
@@ -137,49 +129,22 @@ Return JSON ONLY:
         (await braveSearch(`"${productInfo.title}" reviews OR defect OR broken OR fake`, 7));
     }
 
-    /* 4) STRUCTURE EVIDENCE — o4-mini */
-    const structurePrompt = `
-You are structuring evidence for a trust evaluation system.
+    console.log("Seller Results:", sellerResults);
+    console.log("Domain Results:", domainResults);
+    console.log("Product Results:", productResults);
 
-Rules:
-- Do NOT judge trust
-- Extract factual issues and positives only
-- Group similar claims
-
-Seller results:
-${formatResults(sellerResults) || "None"}
-
-Domain results:
-${formatResults(domainResults) || "None"}
-
-Product results:
-${formatResults(productResults) || "None"}
-
-Return JSON ONLY:
-{
-  "seller_issues": [{ "issue": string, "frequency": "low|medium|high", "severity": "low|medium|high" }],
-  "domain_issues": [{ "issue": string, "frequency": "low|medium|high", "severity": "low|medium|high" }],
-  "product_issues": [{ "issue": string, "frequency": "low|medium|high", "severity": "low|medium|high" }],
-  "positive_signals": string[],
-  "evidence_strength": "weak|moderate|strong"
-}
-`;
-
-    const structuredResponse = await openai.responses.create({
-      model: "o4-mini",
-      input: structurePrompt,
-    });
-
-    const structuredText = structuredResponse.output?.[0]?.content?.[0]?.text || "{}";
-    const structuredEvidence = safeJSONParse(structuredText, {
-      seller_issues: [],
-      domain_issues: [],
-      product_issues: [],
+    /* 4) STRUCTURE EVIDENCE manually */
+    const structuredEvidence = {
+      seller_issues: sellerResults.map(r => ({ issue: r.snippet || "N/A", frequency: "medium", severity: "medium" })),
+      domain_issues: domainResults.map(r => ({ issue: r.snippet || "N/A", frequency: "medium", severity: "medium" })),
+      product_issues: productResults.map(r => ({ issue: r.snippet || "N/A", frequency: "medium", severity: "medium" })),
       positive_signals: [],
-      evidence_strength: "weak",
-    });
+      evidence_strength: "moderate",
+    };
 
-    /* 5) FINAL JUDGMENT — gpt-4.1 */
+    console.log("Structured Evidence:", structuredEvidence);
+
+    /* 5) FINAL JUDGMENT — GPT-4.1 */
     const finalPrompt = `
 You are a conservative product trust evaluator.
 
@@ -208,11 +173,15 @@ Return JSON ONLY:
 
     const finalResponse = await openai.responses.create({
       model: "gpt-4.1",
-      input: finalPrompt,
+      input: [
+        { role: "user", content: [{ type: "input_text", text: finalPrompt }] }
+      ],
     });
 
     const finalText = finalResponse.output?.[0]?.content?.[0]?.text || "{}";
     const evaluation = safeJSONParse(finalText, {});
+
+    console.log("Final Evaluation:", evaluation);
 
     /* 6) RESPONSE */
     return new Response(
@@ -222,6 +191,7 @@ Return JSON ONLY:
       }),
       { status: 200 }
     );
+
   } catch (err) {
     console.error("API ERROR:", err);
     return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
