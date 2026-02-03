@@ -25,12 +25,16 @@ export default function Home() {
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
   const [screenshot, setScreenshot] = useState(null); // NEW
+  const [productInfo, setProductInfo] = useState(null);
+  const [priceComparisons, setPriceComparisons] = useState([]);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
     setResult(null);
     setScreenshot(null);
+    setProductInfo(null);
+    setPriceComparisons([]);
 
     const normalizedUrl = normalizeUrl(url);
     if (!normalizedUrl) {
@@ -52,6 +56,8 @@ export default function Home() {
 
       setScreenshot(data.base64 || null); // screenshot base64
       setResult(data.aiResult || null);    // AI evaluation
+      setProductInfo(data.productInfo || null);
+      setPriceComparisons(data.priceComparisons || []);
     } catch (err) {
       console.error(err);
       setError("Something went wrong. Try again.");
@@ -77,33 +83,7 @@ export default function Home() {
               <div style={styles.step}>
                 <strong>1.</strong> Find a product that looks suspicious or overpriced
               </div>
-              <div style={styles.step}>
-                <strong>2.</strong> Copy the <strong>full link from the product page </strong>
-              </div>
-              <div style={styles.step}>
-                <strong>3.</strong> Paste it below and press <strong>Analyze</strong>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {!result && (
-          <form onSubmit={handleSubmit} style={styles.form}>
-            <input
-              type="url"
-              placeholder="Paste the full product link here…"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              style={styles.input}
-            />
-            <button type="submit" style={styles.button} disabled={loading}>
-              {loading ? "Processing..." : "Analyze Product"}
-            </button>
-            <p style={styles.helperText}>
-              Copy the link from the product page → paste it here → analyze.
-            </p>
-          </form>
-        )}
+@@ -107,50 +113,114 @@ export default function Home() {
 
         {error && <p style={styles.error}>{error}</p>}
 
@@ -128,6 +108,70 @@ export default function Home() {
             <div style={styles.section}>
               <h3>{result.title || "Product Title Not Detected"}</h3>
             </div>
+
+            {productInfo && (
+              <div style={styles.section}>
+                <h4>Extracted Details</h4>
+                <div style={styles.detailGrid}>
+                  <div>
+                    <strong>Seller:</strong>
+                    <div>{productInfo.seller || "Not detected"}</div>
+                  </div>
+                  <div>
+                    <strong>Price:</strong>
+                    <div>{productInfo.price || "Not detected"}</div>
+                  </div>
+                  <div>
+                    <strong>Rating:</strong>
+                    <div>
+                      {productInfo.stars ? `${productInfo.stars}★` : "Not detected"}
+                    </div>
+                  </div>
+                  <div>
+                    <strong>Review Count:</strong>
+                    <div>
+                      {productInfo.reviewCount ?? "Not detected"}
+                    </div>
+                  </div>
+                </div>
+                {productInfo.features?.length ? (
+                  <ul style={styles.featuresList}>
+                    {productInfo.features.map((feature) => (
+                      <li key={feature}>{feature}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p style={styles.muted}>No visible product features detected.</p>
+                )}
+              </div>
+            )}
+
+            {!!priceComparisons.length && (
+              <div style={styles.section}>
+                <h4>Price Checks</h4>
+                <p style={styles.muted}>
+                  We scanned similar listings for public pricing signals.
+                </p>
+                <div style={styles.priceList}>
+                  {priceComparisons.slice(0, 4).map((entry, index) => (
+                    <div key={`${entry.url}-${index}`} style={styles.priceItem}>
+                      <div style={styles.priceTitle}>{entry.title}</div>
+                      <div style={styles.priceMeta}>
+                        <span>${entry.price.toFixed(2)}</span>
+                        {entry.url && (
+                          <a href={entry.url} target="_blank" rel="noreferrer">
+                            View
+                          </a>
+                        )}
+                      </div>
+                      {entry.snippet && (
+                        <div style={styles.priceSnippet}>{entry.snippet}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div style={styles.section}>
               <h4>Website Trust</h4>
@@ -154,21 +198,7 @@ export default function Home() {
                 paddingTop: 16,
               }}
             >
-              <h3>Overall Rating</h3>
-              <Stars score={result.overall.score} />
-              <p>{result.overall.reason}</p>
-            </div>
-          </>
-        )}
-      </div>
-
-      <div style={styles.cardFacts}>
-        <h2 style={styles.factsTitle}>Why It Matters</h2>
-        <ul style={styles.factsList}>
-          <li>Nearly <strong>1 in 3 shoppers</strong> report being scammed online.</li>
-          <li>Many Amazon and online listings are dropshippers reselling products at double or triple the original price.</li>
-          <li>Fake or manipulated reviews are common, making it hard to trust product ratings.</li>
-          <li>Online scams cost consumers and businesses billions every year.</li>
+@@ -172,26 +242,34 @@ export default function Home() {
           <li>We aim to help people avoid these scams and make smarter purchases.</li>
         </ul>
       </div>
@@ -194,4 +224,12 @@ const styles = {
   error: { color: "red", marginTop: 12, textAlign: "center" },
   verdict: (status) => ({ fontSize: 28, fontWeight: 900, color: status === "good" ? "#16a34a" : "#dc2626", textAlign: "center", marginBottom: 24 }),
   section: { marginBottom: 18 },
+  detailGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12, marginTop: 12 },
+  featuresList: { marginTop: 12, paddingLeft: 18, color: "#374151", fontSize: 14, lineHeight: 1.6 },
+  muted: { color: "#6b7280", fontSize: 13 },
+  priceList: { display: "grid", gap: 12, marginTop: 12 },
+  priceItem: { border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#f9fafb" },
+  priceTitle: { fontWeight: 600, marginBottom: 6, color: "#111827" },
+  priceMeta: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, color: "#374151", marginBottom: 6 },
+  priceSnippet: { fontSize: 12, color: "#4b5563" },
 };
