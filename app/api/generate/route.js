@@ -80,13 +80,13 @@ async function extractFromHTML(url) {
       $('[class*="price"]').first().text() ||
       null;
 
-    // ✅ PRICE NORMALIZATION (FIXED)
+    // PRICE NORMALIZATION
     if (price) {
       const match = price.match(/\$?\d+(\.\d{2})?/);
       price = match ? match[0] : null;
     }
 
-    // ✅ AMAZON-AWARE SELLER EXTRACTION
+    // AMAZON-AWARE SELLER
     let seller =
       $("#sellerProfileTriggerId").text() ||
       $("#bylineInfo").text() ||
@@ -96,12 +96,38 @@ async function extractFromHTML(url) {
 
     if (seller) seller = seller.replace(/\s+/g, " ").trim();
 
+    /* ====== DESCRIPTION / CLAIMS (THIS IS THE FIX) ====== */
+
+    let claims = [];
+
+    // Amazon "About this item"
+    $("#feature-bullets li span").each((_, el) => {
+      const text = $(el).text().trim();
+      if (text && text.length > 10) claims.push(text);
+    });
+
+    // Fallback: product description
+    if (claims.length === 0) {
+      const desc =
+        $("#productDescription").text() ||
+        $('meta[name="description"]').attr("content") ||
+        null;
+
+      if (desc) {
+        claims = desc
+          .split(/[.•\n]/)
+          .map(t => t.trim())
+          .filter(t => t.length > 15)
+          .slice(0, 6);
+      }
+    }
+
     return {
       title: title || null,
       price: price || null,
       seller: seller || null,
       platform: new URL(url).hostname.replace("www.", ""),
-      claims: [],
+      claims,
       source: "html",
     };
   } catch {
