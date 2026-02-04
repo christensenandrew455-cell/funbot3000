@@ -11,11 +11,11 @@ const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
 
 /* ===================== HELPERS ===================== */
 
-async function braveSearch(query, size = 7) {
+async function braveSearch(query, count = 7) {
   if (!query || !BRAVE_API_KEY) return [];
   try {
     const res = await fetch(
-      `https://api.search.brave.com/v1/web/search?q=${encodeURIComponent(query)}&size=${size}`,
+      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`,
       {
         headers: {
           Accept: "application/json",
@@ -28,7 +28,7 @@ async function braveSearch(query, size = 7) {
 
     const data = await res.json();
 
-    // ✅ FIX: correct Brave response shape
+    // correct Brave response shape
     return data?.web?.results || [];
   } catch {
     return [];
@@ -226,8 +226,6 @@ Return JSON ONLY:
       );
       productInfo.source = "brave";
     }
-
-    /* ====== MARKET PRICE CONTEXT ====== */
 
     const simplifiedTitle = simplifyTitle(productInfo?.title);
     const marketPrice = simplifiedTitle
