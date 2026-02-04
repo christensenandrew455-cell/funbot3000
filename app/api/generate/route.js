@@ -27,7 +27,6 @@ async function braveSearch(query, count = 7) {
     if (!res.ok) return [];
 
     const data = await res.json();
-
     return data?.web?.results || [];
   } catch {
     return [];
@@ -58,41 +57,48 @@ function safeJSONParse(text, fallback = {}) {
 
 /* ===================== PRICE INTELLIGENCE ===================== */
 
+/**
+ * Generic product-title simplifier
+ * - category agnostic
+ * - removes marketing/descriptors
+ * - keeps core product noun
+ */
 function simplifyTitle(title) {
   if (!title) return null;
 
-  const cleaned = title
+  return title
     .toLowerCase()
+
+    // platform / SEO junk
     .replace(/amazon\.com|sports & outdoors/gi, "")
+
+    // remove separators & parentheticals
     .replace(/\|.*$/g, "")
     .replace(/\(.*?\)/g, "")
-    .replace(/\d+[-\w]*/g, "")
+
+    // remove marketing / descriptor words (generic)
+    .replace(
+      /\b(adjustable|multi[- ]?functional|foldable|portable|premium|professional|heavy[- ]?duty|lightweight|durable|ergonomic|advanced|smart|wireless|wired|usb|bluetooth|rechargeable|waterproof|universal)\b/g,
+      ""
+    )
+
+    // remove audience / usage words
+    .replace(
+      /\b(for|with|and|men|women|kids|children|adults|home|office|gym|outdoor|indoor|training|equipment|workout)\b/g,
+      ""
+    )
+
+    // remove quantities / bundles
+    .replace(/\b\d+[-\w]*\b/g, "")
+
+    // normalize spacing
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
 
-  const tokens = cleaned.split(" ");
-
-  const productNouns = new Set([
-    "board",
-    "bench",
-    "bar",
-    "dumbbell",
-    "band",
-    "bands",
-    "machine",
-    "rack",
-    "mat",
-    "trainer",
-    "equipment"
-  ]);
-
-  for (let i = 0; i < tokens.length; i++) {
-    if (productNouns.has(tokens[i])) {
-      return tokens.slice(Math.max(0, i - 2), i + 1).join(" ");
-    }
-  }
-
-  return tokens.slice(0, 4).join(" ");
+    // keep last meaningful noun phrase
+    .split(" ")
+    .slice(-3)
+    .join(" ");
 }
 
 async function getMarketPrice(productName) {
