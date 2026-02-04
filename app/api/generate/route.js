@@ -28,7 +28,6 @@ async function braveSearch(query, count = 7) {
 
     const data = await res.json();
 
-    // correct Brave response shape
     return data?.web?.results || [];
   } catch {
     return [];
@@ -64,15 +63,17 @@ function simplifyTitle(title) {
 
   return title
     .toLowerCase()
-    .replace(/amazon\.com|sports & outdoors|with .*$/gi, "")
+    .replace(/amazon\.com|sports & outdoors/gi, "")
     .replace(/\|.*$/g, "")
     .replace(/\(.*?\)/g, "")
-    .replace(/\b(for|with|and|men|women|home|gym|training|equipment|multi|functional|adjustable|foldable|strength)\b/g, "")
+    // FIX: only remove filler words, NOT product descriptors
+    .replace(/\b(for|with|and|men|women|home|gym)\b/g, "")
     .replace(/\d+[-\w]*/g, "")
     .replace(/\s+/g, " ")
     .trim()
+    // FIX: allow more words so product noun survives
     .split(" ")
-    .slice(0, 3)
+    .slice(0, 4)
     .join(" ");
 }
 
