@@ -53,6 +53,50 @@ function safeJSONParse(text, fallback = {}) {
   }
 }
 
+/* ===================== PRICE INTELLIGENCE (NEW) ===================== */
+
+function simplifyTitle(title) {
+  if (!title) return null;
+
+  return title
+    .toLowerCase()
+    .replace(/amazon\.com|sports & outdoors|with .*$/gi, "")
+    .replace(/\|.*$/g, "")
+    .replace(/\(.*?\)/g, "")
+    .replace(/\b(for|with|and|men|women|home|gym|training|equipment|multi|functional|adjustable|foldable|strength)\b/g, "")
+    .replace(/\d+[-\w]*/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .slice(0, 3)
+    .join(" ");
+}
+
+async function getMarketPrice(productName) {
+  if (!productName) return null;
+
+  const results = await braveSearch(
+    `average ${productName} price`,
+    6
+  );
+
+  const prices = [];
+
+  for (const r of results) {
+    const matches = r.snippet?.match(/\$\d+(\.\d{2})?/g);
+    if (matches) {
+      matches.forEach(p =>
+        prices.push(parseFloat(p.replace("$", "")))
+      );
+    }
+  }
+
+  if (prices.length === 0) return null;
+
+  prices.sort((a, b) => a - b);
+  return prices[Math.floor(prices.length / 2)];
+}
+
 /* ===================== HTML EXTRACTOR ===================== */
 
 async function extractFromHTML(url) {
@@ -96,17 +140,15 @@ async function extractFromHTML(url) {
 
     if (seller) seller = seller.replace(/\s+/g, " ").trim();
 
-    /* ====== DESCRIPTION / CLAIMS (THIS IS THE FIX) ====== */
+    /* ====== DESCRIPTION / CLAIMS ====== */
 
     let claims = [];
 
-    // Amazon "About this item"
     $("#feature-bullets li span").each((_, el) => {
       const text = $(el).text().trim();
       if (text && text.length > 10) claims.push(text);
     });
 
-    // Fallback: product description
     if (claims.length === 0) {
       const desc =
         $("#productDescription").text() ||
@@ -187,9 +229,23 @@ Return JSON ONLY:
       productInfo.source = "brave";
     }
 
+    /* ====== MARKET PRICE CONTEXT (NEW) ====== */
+
+    const simplifiedTitle = simplifyTitle(productInfo.title);
+    const marketPrice = await getMarketPrice(simplifiedTitle);
+
+    const numericPrice = productInfo.price
+      ? parseFloat(productInfo.price.replace("$", ""))
+      : null;
+
+    productInfo.market = {
+      simplifiedTitle,
+      marketPrice,
+    };
+
     // 3. REASONING
     const reasoningPrompt = `
-Evaluate product legitimacy.
+Evaluate product legitimacy using market-relative pricing.
 
 Product:
 ${JSON.stringify(productInfo, null, 2)}
@@ -229,7 +285,9 @@ Return JSON ONLY:
 
       productTrust: {
         score: analysis.overpriced > 60 ? 2 : 4,
-        reason: "Price vs market expectations.",
+        reason: marketPrice
+          ? `Market avg ≈ $${marketPrice}`
+          : "Price vs market expectations.",
       },
 
       overall: {
