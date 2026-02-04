@@ -61,20 +61,38 @@ function safeJSONParse(text, fallback = {}) {
 function simplifyTitle(title) {
   if (!title) return null;
 
-  return title
+  const cleaned = title
     .toLowerCase()
     .replace(/amazon\.com|sports & outdoors/gi, "")
     .replace(/\|.*$/g, "")
     .replace(/\(.*?\)/g, "")
-    // FIX: only remove filler words, NOT product descriptors
-    .replace(/\b(for|with|and|men|women|home|gym)\b/g, "")
     .replace(/\d+[-\w]*/g, "")
     .replace(/\s+/g, " ")
-    .trim()
-    // FIX: allow more words so product noun survives
-    .split(" ")
-    .slice(0, 4)
-    .join(" ");
+    .trim();
+
+  const tokens = cleaned.split(" ");
+
+  const productNouns = new Set([
+    "board",
+    "bench",
+    "bar",
+    "dumbbell",
+    "band",
+    "bands",
+    "machine",
+    "rack",
+    "mat",
+    "trainer",
+    "equipment"
+  ]);
+
+  for (let i = 0; i < tokens.length; i++) {
+    if (productNouns.has(tokens[i])) {
+      return tokens.slice(Math.max(0, i - 2), i + 1).join(" ");
+    }
+  }
+
+  return tokens.slice(0, 4).join(" ");
 }
 
 async function getMarketPrice(productName) {
