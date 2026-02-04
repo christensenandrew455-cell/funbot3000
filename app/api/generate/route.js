@@ -23,9 +23,13 @@ async function braveSearch(query, size = 7) {
         },
       }
     );
+
     if (!res.ok) return [];
-    const { results = [] } = await res.json();
-    return results;
+
+    const data = await res.json();
+
+    // ✅ FIX: correct Brave response shape
+    return data?.web?.results || [];
   } catch {
     return [];
   }
@@ -53,7 +57,7 @@ function safeJSONParse(text, fallback = {}) {
   }
 }
 
-/* ===================== PRICE INTELLIGENCE (NEW) ===================== */
+/* ===================== PRICE INTELLIGENCE ===================== */
 
 function simplifyTitle(title) {
   if (!title) return null;
@@ -124,13 +128,11 @@ async function extractFromHTML(url) {
       $('[class*="price"]').first().text() ||
       null;
 
-    // PRICE NORMALIZATION
     if (price) {
       const match = price.match(/\$?\d+(\.\d{2})?/);
       price = match ? match[0] : null;
     }
 
-    // AMAZON-AWARE SELLER
     let seller =
       $("#sellerProfileTriggerId").text() ||
       $("#bylineInfo").text() ||
@@ -139,8 +141,6 @@ async function extractFromHTML(url) {
       null;
 
     if (seller) seller = seller.replace(/\s+/g, " ").trim();
-
-    /* ====== DESCRIPTION / CLAIMS ====== */
 
     let claims = [];
 
@@ -188,10 +188,8 @@ export async function POST(req) {
 
     const domain = new URL(url).hostname.replace("www.", "");
 
-    // 1. HTML FIRST
     let productInfo = await extractFromHTML(url);
 
-    // 2. FALLBACK TO BRAVE + AI
     if (!productInfo || !productInfo.title) {
       const results = await braveSearch(
         `${domain} product review price scam`
@@ -229,13 +227,11 @@ Return JSON ONLY:
       productInfo.source = "brave";
     }
 
-    /* ====== MARKET PRICE CONTEXT (NEW) ====== */
+    /* ====== MARKET PRICE CONTEXT ====== */
 
-    const simplifiedTitle = simplifyTitle(productInfo.title);
-    const marketPrice = await getMarketPrice(simplifiedTitle);
-
-    const numericPrice = productInfo.price
-      ? parseFloat(productInfo.price.replace("$", ""))
+    const simplifiedTitle = simplifyTitle(productInfo?.title);
+    const marketPrice = simplifiedTitle
+      ? await getMarketPrice(simplifiedTitle)
       : null;
 
     productInfo.market = {
@@ -243,7 +239,6 @@ Return JSON ONLY:
       marketPrice,
     };
 
-    // 3. REASONING
     const reasoningPrompt = `
 Evaluate product legitimacy using market-relative pricing.
 
@@ -269,7 +264,6 @@ Return JSON ONLY:
       {}
     );
 
-    // 4. UI ADAPTER
     const aiResult = {
       title: productInfo.title,
 
