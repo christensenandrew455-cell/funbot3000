@@ -15,20 +15,26 @@ async function braveSearch(query, count = 7) {
   if (!query || !BRAVE_API_KEY) return [];
   try {
     const res = await fetch(
-      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`,
+      `https://api.search.brave.com/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`,
       {
         headers: {
           Accept: "application/json",
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (compatible; DetestifyAI/1.0)",
           "X-Subscription-Token": BRAVE_API_KEY,
         },
       }
     );
 
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.error("Brave error:", res.status);
+      return [];
+    }
 
     const data = await res.json();
     return data?.web?.results || [];
-  } catch {
+  } catch (err) {
+    console.error("Brave fetch failed:", err);
     return [];
   }
 }
@@ -138,10 +144,11 @@ function simplifyTitle(title) {
     .join(" ");
 }
 
-async function getMarketPrice(productName) {
-  if (!productName) return null;
+async function getMarketPrice(productTitle) {
+  if (!productTitle) return null;
 
-  const results = await braveSearch(`${productName} price`, 6);
+  // Only search for the product, not brand
+  const results = await braveSearch(`${productTitle} price`, 6);
   const prices = [];
 
   for (const r of results) {
@@ -243,13 +250,12 @@ export async function POST(req) {
 
     const simplifiedTitle = simplifyTitle(productInfo.title);
     const marketPrice = simplifiedTitle
-      ? await getMarketPrice(simplifiedTitle)
+      ? await getMarketPrice(productInfo.title) // Only search product
       : null;
 
     productInfo.market = { simplifiedTitle, marketPrice };
 
     /* ===== BRAND + PRODUCT SEARCH ===== */
-
     const productSearchText = await getSearchSnippets(
       `${productInfo.brand} ${simplifiedTitle}`
     );
@@ -259,7 +265,6 @@ export async function POST(req) {
       : 2;
 
     /* ===== SELLER SEARCH ===== */
-
     const sellerSearchText = productInfo.seller
       ? await getSearchSnippets(`${productInfo.seller} amazon seller reviews`)
       : null;
@@ -274,7 +279,6 @@ export async function POST(req) {
     );
 
     /* ===== AI ANALYSIS ===== */
-
     const reasoningPrompt = `
 Evaluate risk only.
 
