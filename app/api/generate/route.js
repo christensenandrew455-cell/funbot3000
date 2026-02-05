@@ -57,45 +57,25 @@ function safeJSONParse(text, fallback = {}) {
 
 /* ===================== PRICE INTELLIGENCE ===================== */
 
-/**
- * Generic product-title simplifier
- * - category agnostic
- * - removes marketing/descriptors
- * - keeps core product noun
- */
 function simplifyTitle(title) {
   if (!title) return null;
 
   return title
     .toLowerCase()
-
-    // platform / SEO junk
     .replace(/amazon\.com|sports & outdoors/gi, "")
-
-    // remove separators & parentheticals
     .replace(/\|.*$/g, "")
     .replace(/\(.*?\)/g, "")
-
-    // remove marketing / descriptor words (generic)
     .replace(
       /\b(adjustable|multi[- ]?functional|foldable|portable|premium|professional|heavy[- ]?duty|lightweight|durable|ergonomic|advanced|smart|wireless|wired|usb|bluetooth|rechargeable|waterproof|universal)\b/g,
       ""
     )
-
-    // remove audience / usage words
     .replace(
-      /\b(for|with|and|men|women|kids|children|adults|home|office|gym|outdoor|indoor|training|equipment|workout)\b/g,
+      /\b(for|with|and|men|women|kids|children|adults|home|office|gym|outdoor|indoor|training|equipment)\b/g,
       ""
     )
-
-    // remove quantities / bundles
     .replace(/\b\d+[-\w]*\b/g, "")
-
-    // normalize spacing
     .replace(/\s+/g, " ")
     .trim()
-
-    // keep last meaningful noun phrase
     .split(" ")
     .slice(-3)
     .join(" ");
@@ -104,19 +84,25 @@ function simplifyTitle(title) {
 async function getMarketPrice(productName) {
   if (!productName) return null;
 
+  // 🔧 FIX #1: better Brave query
   const results = await braveSearch(
-    `average ${productName} price`,
+    `${productName} price`,
     6
   );
 
   const prices = [];
 
   for (const r of results) {
-    const matches = r.snippet?.match(/\$\d+(\.\d{2})?/g);
+    // 🔧 FIX #2: read prices from title + snippet
+    const text = `${r.title || ""} ${r.snippet || ""}`;
+    const matches = text.match(/\$?\b\d{1,3}(\.\d{2})?\b/g);
+
     if (matches) {
-      matches.forEach(p =>
-        prices.push(parseFloat(p.replace("$", "")))
-      );
+      matches.forEach(p => {
+        const n = parseFloat(p.replace("$", ""));
+        // sanity filter (avoids "20-in-1", etc.)
+        if (n > 5 && n < 500) prices.push(n);
+      });
     }
   }
 
