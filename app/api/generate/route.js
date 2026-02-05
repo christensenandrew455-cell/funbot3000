@@ -15,7 +15,7 @@ async function braveSearch(query, count = 7) {
   if (!query || !BRAVE_API_KEY) return [];
   try {
     const res = await fetch(
-      `https://api.search.brave.com/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`,
+      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`,
       {
         headers: {
           Accept: "application/json",
