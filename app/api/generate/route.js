@@ -1,5 +1,6 @@
 export const runtime = "nodejs";
 
+import fetch from "node-fetch";
 import { OpenAI } from "openai";
 import * as cheerio from "cheerio";
 
@@ -9,30 +10,49 @@ const openai = new OpenAI({
 
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
 
+/* ===================== BRAVE CACHE ===================== */
+
+const braveCache = new Map();
+
 /* ===================== HELPERS ===================== */
 
 async function braveSearch(query, count = 7) {
-  if (!query || !BRAVE_API_KEY) return [];
+  if (!query || !BRAVE_API_KEY) {
+    console.error("Brave search skipped: missing query or API key");
+    return [];
+  }
+
+  const cacheKey = `${query}:${count}`;
+  if (braveCache.has(cacheKey)) {
+    return braveCache.get(cacheKey);
+  }
+
   try {
     const res = await fetch(
-      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`,
+      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(
+        query
+      )}&count=${count}`,
       {
         headers: {
           Accept: "application/json",
-          "Content-Type": "application/json",
-          "User-Agent": "Mozilla/5.0 (compatible; DetestifyAI/1.0)",
           "X-Subscription-Token": BRAVE_API_KEY,
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/121.0.0.0 Safari/537.36",
         },
       }
     );
 
     if (!res.ok) {
-      console.error("Brave error:", res.status);
+      const text = await res.text();
+      console.error("Brave error:", res.status, text);
       return [];
     }
 
     const data = await res.json();
-    return data?.web?.results || [];
+    const results = data?.web?.results || [];
+
+    braveCache.set(cacheKey, results);
+    return results;
   } catch (err) {
     console.error("Brave fetch failed:", err);
     return [];
@@ -147,7 +167,6 @@ function simplifyTitle(title) {
 async function getMarketPrice(productTitle) {
   if (!productTitle) return null;
 
-  // Only search for the product, not brand
   const results = await braveSearch(`${productTitle} price`, 6);
   const prices = [];
 
@@ -174,7 +193,8 @@ async function extractFromHTML(url) {
   try {
     const res = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/121.0.0.0 Safari/537.36",
         Accept: "text/html",
       },
     });
@@ -240,22 +260,26 @@ export async function POST(req) {
   try {
     const { url } = await req.json();
     if (!url) {
-      return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "Missing URL" }), {
+        status: 400,
+      });
     }
 
     let productInfo = await extractFromHTML(url);
     if (!productInfo?.title) {
-      return new Response(JSON.stringify({ error: "Failed to extract product" }), { status: 400 });
+      return new Response(
+        JSON.stringify({ error: "Failed to extract product" }),
+        { status: 400 }
+      );
     }
 
     const simplifiedTitle = simplifyTitle(productInfo.title);
     const marketPrice = simplifiedTitle
-      ? await getMarketPrice(productInfo.title) // Only search product
+      ? await getMarketPrice(productInfo.title)
       : null;
 
     productInfo.market = { simplifiedTitle, marketPrice };
 
-    /* ===== BRAND + PRODUCT SEARCH ===== */
     const productSearchText = await getSearchSnippets(
       `${productInfo.brand} ${simplifiedTitle}`
     );
@@ -264,9 +288,10 @@ export async function POST(req) {
       ? await aiScaleReputation(productSearchText, "product/brand")
       : 2;
 
-    /* ===== SELLER SEARCH ===== */
     const sellerSearchText = productInfo.seller
-      ? await getSearchSnippets(`${productInfo.seller} amazon seller reviews`)
+      ? await getSearchSnippets(
+          `${productInfo.seller} amazon seller reviews`
+        )
       : null;
 
     const sellerReputationScore = sellerSearchText
@@ -278,7 +303,6 @@ export async function POST(req) {
       productInfo.seller
     );
 
-    /* ===== AI ANALYSIS ===== */
     const reasoningPrompt = `
 Evaluate risk only.
 
@@ -298,13 +322,21 @@ Return JSON ONLY:
       input: reasoningPrompt,
     });
 
-    const analysis = safeJSONParse(getResponseText(reasoningResponse), {});
+    const analysis = safeJSONParse(
+      getResponseText(reasoningResponse),
+      {}
+    );
 
     const aiResult = {
       title: productInfo.title,
 
       sellerTrust: {
-        score: mismatch ? 1 : Math.min(sellerReputationScore, analysis.dropship > 60 ? 2 : 5),
+        score: mismatch
+          ? 1
+          : Math.min(
+              sellerReputationScore,
+              analysis.dropship > 60 ? 2 : 5
+            ),
         reason: mismatch
           ? "Seller does not match brand (dropship signal)."
           : sellerSearchText
