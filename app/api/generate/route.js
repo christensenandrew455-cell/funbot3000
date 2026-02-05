@@ -55,7 +55,7 @@ function safeJSONParse(text, fallback = {}) {
   }
 }
 
-/* 🔧 BRAND NORMALIZATION (ONLY ADDITION) */
+/* ===================== BRAND NORMALIZATION ===================== */
 
 function normalizeBrand(raw) {
   if (!raw) return null;
@@ -66,6 +66,50 @@ function normalizeBrand(raw) {
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+}
+
+/* ===================== SEARCH TRUST SIGNALS ===================== */
+
+async function getSearchSnippets(query) {
+  const results = await braveSearch(query, 6);
+  if (!results.length) return null;
+
+  return results
+    .map(r => `${r.title || ""} — ${r.snippet || ""}`)
+    .join("\n");
+}
+
+async function aiScaleReputation(text, subject) {
+  if (!text) return null;
+
+  const prompt = `
+Rate the trustworthiness of the following ${subject}.
+Scale from 1 (bad/untrustworthy) to 5 (good/trustworthy).
+
+Text:
+${text}
+
+Return JSON ONLY:
+{ "score": number }
+`;
+
+  const res = await openai.responses.create({
+    model: "gpt-4o-mini",
+    input: prompt,
+  });
+
+  const parsed = safeJSONParse(getResponseText(res), {});
+  return typeof parsed.score === "number" ? parsed.score : null;
+}
+
+function brandSellerMismatch(brand, seller) {
+  if (!brand || !seller) return false;
+
+  const b = brand.toLowerCase();
+  const s = seller.toLowerCase();
+
+  if (s.includes("amazon")) return false;
+  return !s.includes(b);
 }
 
 /* ===================== PRICE INTELLIGENCE ===================== */
@@ -98,7 +142,6 @@ async function getMarketPrice(productName) {
   if (!productName) return null;
 
   const results = await braveSearch(`${productName} price`, 6);
-
   const prices = [];
 
   for (const r of results) {
@@ -113,8 +156,7 @@ async function getMarketPrice(productName) {
     }
   }
 
-  if (prices.length === 0) return null;
-
+  if (!prices.length) return null;
   prices.sort((a, b) => a - b);
   return prices[Math.floor(prices.length / 2)];
 }
@@ -163,36 +205,19 @@ async function extractFromHTML(url) {
       $('#productOverview_feature_div tr:contains("Brand") td').text() ||
       null;
 
-    // 🔧 ONLY LINE MODIFIED
     brand = normalizeBrand(brand);
 
     let claims = [];
-
     $("#feature-bullets li span").each((_, el) => {
       const text = $(el).text().trim();
-      if (text && text.length > 10) claims.push(text);
+      if (text.length > 10) claims.push(text);
     });
 
-    if (claims.length === 0) {
-      const desc =
-        $("#productDescription").text() ||
-        $('meta[name="description"]').attr("content") ||
-        null;
-
-      if (desc) {
-        claims = desc
-          .split(/[.•\n]/)
-          .map(t => t.trim())
-          .filter(t => t.length > 15)
-          .slice(0, 6);
-      }
-    }
-
     return {
-      title: title || null,
-      price: price || null,
-      seller: seller || null,
-      brand: brand || null,
+      title,
+      price,
+      seller,
+      brand,
       platform: new URL(url).hostname.replace("www.", ""),
       claims,
       source: "html",
@@ -211,57 +236,47 @@ export async function POST(req) {
       return new Response(JSON.stringify({ error: "Missing URL" }), { status: 400 });
     }
 
-    const domain = new URL(url).hostname.replace("www.", "");
-
     let productInfo = await extractFromHTML(url);
-
-    if (!productInfo || !productInfo.title) {
-      const results = await braveSearch(`${domain} product review price scam`);
-
-      const snippets = results
-        .map(r => `${r.title} — ${r.snippet}`)
-        .join("\n");
-
-      const extractPrompt = `
-Extract factual product info. Do NOT guess.
-
-Text:
-${snippets}
-
-Return JSON ONLY:
-{
-  "title": string | null,
-  "price": string | null,
-  "seller": string | null,
-  "platform": string | null,
-  "claims": string[]
-}
-`;
-
-      const extractResponse = await openai.responses.create({
-        model: "gpt-4o-mini",
-        input: extractPrompt,
-      });
-
-      productInfo = safeJSONParse(
-        getResponseText(extractResponse),
-        { claims: [] }
-      );
-      productInfo.source = "brave";
+    if (!productInfo?.title) {
+      return new Response(JSON.stringify({ error: "Failed to extract product" }), { status: 400 });
     }
 
-    const simplifiedTitle = simplifyTitle(productInfo?.title);
+    const simplifiedTitle = simplifyTitle(productInfo.title);
     const marketPrice = simplifiedTitle
       ? await getMarketPrice(simplifiedTitle)
       : null;
 
-    productInfo.market = {
-      simplifiedTitle,
-      marketPrice,
-    };
+    productInfo.market = { simplifiedTitle, marketPrice };
+
+    /* ===== BRAND + PRODUCT SEARCH ===== */
+
+    const productSearchText = await getSearchSnippets(
+      `${productInfo.brand} ${simplifiedTitle}`
+    );
+
+    const productReputationScore = productSearchText
+      ? await aiScaleReputation(productSearchText, "product/brand")
+      : 2;
+
+    /* ===== SELLER SEARCH ===== */
+
+    const sellerSearchText = productInfo.seller
+      ? await getSearchSnippets(`${productInfo.seller} amazon seller reviews`)
+      : null;
+
+    const sellerReputationScore = sellerSearchText
+      ? await aiScaleReputation(sellerSearchText, "seller")
+      : 2;
+
+    const mismatch = brandSellerMismatch(
+      productInfo.brand,
+      productInfo.seller
+    );
+
+    /* ===== AI ANALYSIS ===== */
 
     const reasoningPrompt = `
-Evaluate product legitimacy using market-relative pricing.
+Evaluate risk only.
 
 Product:
 ${JSON.stringify(productInfo, null, 2)}
@@ -270,8 +285,7 @@ Return JSON ONLY:
 {
   "scam": number,
   "overpriced": number,
-  "dropship": number,
-  "confidence": "low" | "medium" | "high"
+  "dropship": number
 }
 `;
 
@@ -280,45 +294,54 @@ Return JSON ONLY:
       input: reasoningPrompt,
     });
 
-    const analysis = safeJSONParse(
-      getResponseText(reasoningResponse),
-      {}
-    );
+    const analysis = safeJSONParse(getResponseText(reasoningResponse), {});
 
     const aiResult = {
       title: productInfo.title,
 
-      websiteTrust: {
-        score: analysis.scam > 60 ? 1 : analysis.scam > 30 ? 3 : 5,
-        reason: "Domain and reputation signals.",
-      },
-
       sellerTrust: {
-        score: analysis.dropship > 60 ? 2 : 4,
-        reason: "Sourcing indicators.",
+        score: mismatch ? 1 : Math.min(sellerReputationScore, analysis.dropship > 60 ? 2 : 5),
+        reason: mismatch
+          ? "Seller does not match brand (dropship signal)."
+          : sellerSearchText
+          ? "External seller reputation found."
+          : "No seller reputation found.",
       },
 
       productTrust: {
-        score: analysis.overpriced > 60 ? 2 : 4,
-        reason: marketPrice
-          ? `Market avg ≈ $${marketPrice}`
-          : "Price vs market expectations.",
+        score: Math.min(
+          productReputationScore,
+          analysis.overpriced > 60 ? 2 : 5
+        ),
+        reason: productSearchText
+          ? "External product/brand info found."
+          : "No external product/brand info found.",
       },
 
       overall: {
-        score: analysis.scam > 60 ? 1 : analysis.scam > 30 ? 3 : 5,
-        reason: "Aggregated risk signals.",
+        score: Math.min(
+          productReputationScore,
+          sellerReputationScore,
+          mismatch ? 1 : 5
+        ),
+        reason: "Brand, seller, and pricing signals combined.",
       },
 
-      status: analysis.scam > 60 ? "bad" : "good",
+      status:
+        mismatch ||
+        productReputationScore <= 2 ||
+        sellerReputationScore <= 2
+          ? "bad"
+          : "good",
     };
 
-    return new Response(
-      JSON.stringify({ base64: null, aiResult }),
-      { status: 200 }
-    );
+    return new Response(JSON.stringify({ base64: null, aiResult }), {
+      status: 200,
+    });
   } catch (err) {
     console.error(err);
-    return new Response(JSON.stringify({ error: "Server error" }), { status: 500 });
+    return new Response(JSON.stringify({ error: "Server error" }), {
+      status: 500,
+    });
   }
 }
