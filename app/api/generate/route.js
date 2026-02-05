@@ -101,6 +101,12 @@ async function getSearchSnippets(query) {
   if (!results.length) return null;
 
   return results
+    .filter(
+      r =>
+        r.snippet &&
+        r.snippet.length > 50 &&
+        !/coupon|deal|buy now|% off/i.test(r.snippet)
+    )
     .map(r => `${r.title || ""} — ${r.snippet || ""}`)
     .join("\n");
 }
@@ -158,10 +164,7 @@ function simplifyTitle(title) {
     )
     .replace(/\b\d+[-\w]*\b/g, "")
     .replace(/\s+/g, " ")
-    .trim()
-    .split(" ")
-    .slice(-3)
-    .join(" ");
+    .trim(); // FIX: stop slicing to last 3 words
 }
 
 async function getMarketPrice(productTitle) {
@@ -274,29 +277,35 @@ export async function POST(req) {
     }
 
     const simplifiedTitle = simplifyTitle(productInfo.title);
+
+    // FIX: use simplifiedTitle for pricing
     const marketPrice = simplifiedTitle
-      ? await getMarketPrice(productInfo.title)
+      ? await getMarketPrice(simplifiedTitle)
       : null;
 
     productInfo.market = { simplifiedTitle, marketPrice };
 
-    const productSearchText = await getSearchSnippets(
-      `${productInfo.brand} ${simplifiedTitle}`
-    );
+    // FIX: brand-only reputation search with intent
+    const productSearchText = productInfo.brand
+      ? await getSearchSnippets(
+          `"${productInfo.brand}" reviews reputation trust scam`
+        )
+      : null;
 
     const productReputationScore = productSearchText
-      ? await aiScaleReputation(productSearchText, "product/brand")
-      : 2;
+      ? await aiScaleReputation(productSearchText, "brand")
+      : null;
 
+    // FIX: full seller name, not broken tokens
     const sellerSearchText = productInfo.seller
       ? await getSearchSnippets(
-          `${productInfo.seller} amazon seller reviews`
+          `"${productInfo.seller}" amazon seller reviews complaints`
         )
       : null;
 
     const sellerReputationScore = sellerSearchText
       ? await aiScaleReputation(sellerSearchText, "seller")
-      : 2;
+      : null;
 
     const mismatch = brandSellerMismatch(
       productInfo.brand,
@@ -333,10 +342,7 @@ Return JSON ONLY:
       sellerTrust: {
         score: mismatch
           ? 1
-          : Math.min(
-              sellerReputationScore,
-              analysis.dropship > 60 ? 2 : 5
-            ),
+          : sellerReputationScore ?? 2,
         reason: mismatch
           ? "Seller does not match brand (dropship signal)."
           : sellerSearchText
@@ -345,19 +351,16 @@ Return JSON ONLY:
       },
 
       productTrust: {
-        score: Math.min(
-          productReputationScore,
-          analysis.overpriced > 60 ? 2 : 5
-        ),
+        score: productReputationScore ?? 2,
         reason: productSearchText
-          ? "External product/brand info found."
-          : "No external product/brand info found.",
+          ? "External brand reputation found."
+          : "No external brand reputation found.",
       },
 
       overall: {
         score: Math.min(
-          productReputationScore,
-          sellerReputationScore,
+          productReputationScore ?? 2,
+          sellerReputationScore ?? 2,
           mismatch ? 1 : 5
         ),
         reason: "Brand, seller, and pricing signals combined.",
@@ -365,8 +368,10 @@ Return JSON ONLY:
 
       status:
         mismatch ||
-        productReputationScore <= 2 ||
-        sellerReputationScore <= 2
+        (productReputationScore !== null &&
+          productReputationScore <= 2) ||
+        (sellerReputationScore !== null &&
+          sellerReputationScore <= 2)
           ? "bad"
           : "good",
     };
