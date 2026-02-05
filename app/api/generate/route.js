@@ -55,6 +55,19 @@ function safeJSONParse(text, fallback = {}) {
   }
 }
 
+/* 🔧 BRAND NORMALIZATION (ONLY ADDITION) */
+
+function normalizeBrand(raw) {
+  if (!raw) return null;
+
+  return raw
+    .replace(/^(brand[:\s]+|visit the\s+|by\s+)/i, "")
+    .replace(/\s+store$/i, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
 /* ===================== PRICE INTELLIGENCE ===================== */
 
 function simplifyTitle(title) {
@@ -84,10 +97,7 @@ function simplifyTitle(title) {
 async function getMarketPrice(productName) {
   if (!productName) return null;
 
-  const results = await braveSearch(
-    `${productName} price`,
-    6
-  );
+  const results = await braveSearch(`${productName} price`, 6);
 
   const prices = [];
 
@@ -141,7 +151,6 @@ async function extractFromHTML(url) {
       price = match ? match[0] : null;
     }
 
-    // 🔧 CHANGE: extract seller and brand separately
     let seller =
       $("#sellerProfileTriggerId").text() ||
       $("#bylineInfo").text() ||
@@ -154,7 +163,8 @@ async function extractFromHTML(url) {
       $('#productOverview_feature_div tr:contains("Brand") td').text() ||
       null;
 
-    if (brand) brand = brand.replace(/\s+/g, " ").trim();
+    // 🔧 ONLY LINE MODIFIED
+    brand = normalizeBrand(brand);
 
     let claims = [];
 
@@ -206,9 +216,7 @@ export async function POST(req) {
     let productInfo = await extractFromHTML(url);
 
     if (!productInfo || !productInfo.title) {
-      const results = await braveSearch(
-        `${domain} product review price scam`
-      );
+      const results = await braveSearch(`${domain} product review price scam`);
 
       const snippets = results
         .map(r => `${r.title} — ${r.snippet}`)
