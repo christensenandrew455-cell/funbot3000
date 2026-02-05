@@ -84,7 +84,6 @@ function simplifyTitle(title) {
 async function getMarketPrice(productName) {
   if (!productName) return null;
 
-  // 🔧 FIX #1: better Brave query
   const results = await braveSearch(
     `${productName} price`,
     6
@@ -93,14 +92,12 @@ async function getMarketPrice(productName) {
   const prices = [];
 
   for (const r of results) {
-    // 🔧 FIX #2: read prices from title + snippet
     const text = `${r.title || ""} ${r.snippet || ""}`;
     const matches = text.match(/\$?\b\d{1,3}(\.\d{2})?\b/g);
 
     if (matches) {
       matches.forEach(p => {
         const n = parseFloat(p.replace("$", ""));
-        // sanity filter (avoids "20-in-1", etc.)
         if (n > 5 && n < 500) prices.push(n);
       });
     }
@@ -144,14 +141,20 @@ async function extractFromHTML(url) {
       price = match ? match[0] : null;
     }
 
+    // 🔧 CHANGE: extract seller and brand separately
     let seller =
       $("#sellerProfileTriggerId").text() ||
       $("#bylineInfo").text() ||
-      $('[itemprop="brand"]').text() ||
-      $('meta[property="og:site_name"]').attr("content") ||
       null;
 
     if (seller) seller = seller.replace(/\s+/g, " ").trim();
+
+    let brand =
+      $('[itemprop="brand"]').text() ||
+      $('#productOverview_feature_div tr:contains("Brand") td').text() ||
+      null;
+
+    if (brand) brand = brand.replace(/\s+/g, " ").trim();
 
     let claims = [];
 
@@ -179,6 +182,7 @@ async function extractFromHTML(url) {
       title: title || null,
       price: price || null,
       seller: seller || null,
+      brand: brand || null,
       platform: new URL(url).hostname.replace("www.", ""),
       claims,
       source: "html",
