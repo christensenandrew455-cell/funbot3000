@@ -64,9 +64,10 @@ export async function POST(req) {
 
     console.log("[CATEGORY]", category);
 
-    const market = simplifiedTitle
-      ? await getMarketPriceRange(simplifiedTitle)
-      : null;
+    const market =
+  simplifiedTitle && category
+    ? await getMarketPriceRange(simplifiedTitle, category)
+    : null;
 
     console.log("[MARKET RANGE]", market);
 
