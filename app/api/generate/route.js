@@ -21,6 +21,11 @@ function classifyPrice(price, market) {
   return "normal";
 }
 
+function clampScore(score, fallback = 2) {
+  if (typeof score !== "number" || Number.isNaN(score)) return fallback;
+  return Math.max(1, Math.min(5, Math.round(score)));
+}
+
 export async function POST(req) {
   try {
     const { url } = await req.json();
@@ -92,26 +97,70 @@ export async function POST(req) {
     console.log("[SELLER SCORE]", sellerScore);
     console.log("[MISMATCH]", mismatch);
 
+        const productTrustScore = clampScore(brandScore, 2);
+    const sellerTrustScore = clampScore(mismatch ? 1 : sellerScore, mismatch ? 1 : 2);
+
+    const websiteTrustScore = clampScore(
+      (() => {
+        if (pricePosition === "underpriced") return 2;
+        if (pricePosition === "overpriced") return 2;
+        if (pricePosition === "normal") return 4;
+        return 3;
+      })(),
+      3
+    );
+
+    const overallScore = clampScore(
+      Math.round((productTrustScore + sellerTrustScore + websiteTrustScore) / 3),
+      2
+    );
+
     const aiResult = {
       title: productInfo.title,
       category,
       market,
       pricePosition,
+      integrations: {
+        openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
+        braveConfigured: Boolean(process.env.BRAVE_API_KEY),
+      },
 
+      websiteTrust: {
+        score: websiteTrustScore,
+        reason:
+          pricePosition === "underpriced"
+            ? "Price is much lower than market baseline, which can be a scam signal."
+            : pricePosition === "overpriced"
+            ? "Price is above the market range and may indicate poor value."
+            : pricePosition === "normal"
+            ? "Price appears within normal market range."
+            : "Not enough pricing data to judge website trust confidently.",
+      },
+      
       productTrust: {
-        score: brandScore ?? 2,
+        score: productTrustScore,
         reason: brandText
           ? "External brand information found."
           : "No external brand information found.",
       },
 
       sellerTrust: {
-        score: mismatch ? 1 : sellerScore ?? 2,
+        score: sellerTrustScore,
         reason: mismatch
           ? "Seller does not match brand (dropship signal)."
           : sellerText
           ? "External seller information found."
           : "No seller information found.",
+      },
+
+            overall: {
+        score: overallScore,
+        reason:
+          overallScore <= 2
+            ? "Multiple trust signals are weak. Proceed with caution."
+            : overallScore === 3
+            ? "Mixed signals. Verify seller and pricing before purchase."
+            : "Trust signals look healthy based on available data.",
       },
 
       status:
