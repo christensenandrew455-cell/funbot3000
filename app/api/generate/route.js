@@ -4,13 +4,21 @@ import { extractFromHTML, simplifyTitle } from "./extract.js";
 import {
   getSearchSnippets,
   aiScaleReputation,
-  getMarketPrice,
+  getMarketPriceRange,
+  aiInferCategory,
 } from "./search.js";
 
 function brandSellerMismatch(brand, seller) {
   if (!brand || !seller) return false;
   if (seller.toLowerCase().includes("amazon")) return false;
   return !seller.toLowerCase().includes(brand.toLowerCase());
+}
+
+function classifyPrice(price, market) {
+  if (!price || !market) return "unknown";
+  if (price < market.min * 0.8) return "underpriced";
+  if (price > market.max * 1.2) return "overpriced";
+  return "normal";
 }
 
 export async function POST(req) {
@@ -31,19 +39,23 @@ export async function POST(req) {
     }
 
     const simplifiedTitle = simplifyTitle(productInfo.title);
-    const marketPrice = simplifiedTitle
-      ? await getMarketPrice(simplifiedTitle)
+    const category = simplifiedTitle
+      ? await aiInferCategory(simplifiedTitle)
+      : null;
+
+    const market = simplifiedTitle
+      ? await getMarketPriceRange(simplifiedTitle)
       : null;
 
     const brandText = productInfo.brand
       ? await getSearchSnippets(
-          `"${productInfo.brand}" reviews reputation trust scam`
+          `"${productInfo.brand}" about reviews company information`
         )
       : null;
 
     const sellerText = productInfo.seller
       ? await getSearchSnippets(
-          `"${productInfo.seller}" amazon seller reviews complaints`
+          `"${productInfo.seller}" seller reviews business information`
         )
       : null;
 
@@ -60,15 +72,23 @@ export async function POST(req) {
       productInfo.seller
     );
 
+    const pricePosition = classifyPrice(
+      productInfo.price ? parseFloat(productInfo.price.replace("$", "")) : null,
+      market
+    );
+
     const aiResult = {
       title: productInfo.title,
-      market: { simplifiedTitle, marketPrice },
+      category,
+      market,
+
+      pricePosition,
 
       productTrust: {
         score: brandScore ?? 2,
         reason: brandText
-          ? "External brand reputation found."
-          : "No external brand reputation found.",
+          ? "External brand information found."
+          : "No external brand information found.",
       },
 
       sellerTrust: {
@@ -76,12 +96,13 @@ export async function POST(req) {
         reason: mismatch
           ? "Seller does not match brand (dropship signal)."
           : sellerText
-          ? "External seller reputation found."
-          : "No seller reputation found.",
+          ? "External seller information found."
+          : "No seller information found.",
       },
 
       status:
         mismatch ||
+        pricePosition === "overpriced" ||
         (brandScore !== null && brandScore <= 2) ||
         (sellerScore !== null && sellerScore <= 2)
           ? "bad"
