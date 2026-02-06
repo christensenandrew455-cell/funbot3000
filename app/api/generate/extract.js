@@ -28,6 +28,14 @@ export function simplifyTitle(title) {
 }
 
 /* ===================== HTML EXTRACT ===================== */
+/* NOTE:
+   This extractor intentionally DOES NOT parse:
+   - product descriptions
+   - feature bullets
+   - marketing text
+   - seller claims
+   Only factual page metadata is extracted.
+*/
 
 export async function extractFromHTML(url) {
   try {
