@@ -7,7 +7,14 @@ function getOpenAIClient() {
   return new OpenAI({ apiKey });
 }
 
-const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
+function getBraveApiKey() {
+  return process.env.BRAVE_API_KEY || process.env.BRAVE_SEARCH_API_KEY || null;
+}
+
+export function isBraveConfigured() {
+  return Boolean(getBraveApiKey());
+}
+
 const braveCache = new Map();
 
 /* ===================== BRAVE SEARCH ===================== */
@@ -15,8 +22,16 @@ const braveCache = new Map();
 export async function braveSearch(query, count = 7) {
   console.log("[BRAVE SEARCH] query:", query);
 
-  if (!query || !BRAVE_API_KEY) {
-    console.log("[BRAVE SEARCH] skipped (missing query or API key)");
+    if (!query) {
+    console.log("[BRAVE SEARCH] skipped (missing query)");
+    return [];
+  }
+
+  const braveApiKey = getBraveApiKey();
+  if (!braveApiKey) {
+    console.log(
+      "[BRAVE SEARCH] skipped (missing BRAVE_API_KEY/BRAVE_SEARCH_API_KEY)"
+    );
     return [];
   }
 
@@ -34,7 +49,7 @@ export async function braveSearch(query, count = 7) {
       {
         headers: {
           Accept: "application/json",
-          "X-Subscription-Token": BRAVE_API_KEY,
+          "X-Subscription-Token": braveApiKey,
           "User-Agent": "Mozilla/5.0",
         },
       }
