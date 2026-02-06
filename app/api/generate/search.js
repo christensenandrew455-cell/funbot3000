@@ -11,10 +11,18 @@ const braveCache = new Map();
 /* ===================== BRAVE SEARCH ===================== */
 
 export async function braveSearch(query, count = 7) {
-  if (!query || !BRAVE_API_KEY) return [];
+  console.log("[BRAVE SEARCH] query:", query);
+
+  if (!query || !BRAVE_API_KEY) {
+    console.log("[BRAVE SEARCH] skipped (missing query or API key)");
+    return [];
+  }
 
   const cacheKey = `${query}:${count}`;
-  if (braveCache.has(cacheKey)) return braveCache.get(cacheKey);
+  if (braveCache.has(cacheKey)) {
+    console.log("[BRAVE SEARCH] cache hit");
+    return braveCache.get(cacheKey);
+  }
 
   try {
     const res = await fetch(
@@ -30,14 +38,20 @@ export async function braveSearch(query, count = 7) {
       }
     );
 
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.log("[BRAVE SEARCH] failed:", res.status);
+      return [];
+    }
 
     const data = await res.json();
     const results = data?.web?.results || [];
 
+    console.log("[BRAVE SEARCH] results:", results.length);
+
     braveCache.set(cacheKey, results);
     return results;
-  } catch {
+  } catch (err) {
+    console.error("[BRAVE SEARCH] error:", err);
     return [];
   }
 }
@@ -69,6 +83,8 @@ function getResponseText(res) {
 /* ===================== CATEGORY ===================== */
 
 export async function aiInferCategory(simplifiedTitle) {
+  console.log("[AI CATEGORY] input:", simplifiedTitle);
+
   if (!simplifiedTitle) return null;
 
   const prompt = `
@@ -81,22 +97,34 @@ Return JSON ONLY:
 { "category": string }
 `;
 
+  console.log("[AI CATEGORY] prompt:", prompt);
+
   const res = await openai.responses.create({
     model: "gpt-4o-mini",
     input: prompt,
   });
 
-  const parsed = safeJSONParse(getResponseText(res), {});
+  const raw = getResponseText(res);
+  console.log("[AI CATEGORY] raw response:", raw);
+
+  const parsed = safeJSONParse(raw, {});
+  console.log("[AI CATEGORY] parsed:", parsed);
+
   return typeof parsed.category === "string" ? parsed.category : null;
 }
 
 /* ===================== REPUTATION ===================== */
 
 export async function getSearchSnippets(query) {
-  const results = await braveSearch(query, 6);
-  if (!results.length) return null;
+  console.log("[SNIPPETS] query:", query);
 
-  return results
+  const results = await braveSearch(query, 6);
+  if (!results.length) {
+    console.log("[SNIPPETS] no results");
+    return null;
+  }
+
+  const text = results
     .filter(
       r =>
         r.snippet &&
@@ -105,9 +133,16 @@ export async function getSearchSnippets(query) {
     )
     .map(r => `${r.title || ""} — ${r.snippet || ""}`)
     .join("\n");
+
+  console.log("[SNIPPETS] length:", text.length);
+
+  return text || null;
 }
 
 export async function aiScaleReputation(text, subject) {
+  console.log(`[AI REPUTATION] subject: ${subject}`);
+  console.log(`[AI REPUTATION] input length: ${text?.length}`);
+
   if (!text) return null;
 
   const prompt = `
@@ -121,18 +156,27 @@ Return JSON ONLY:
 { "score": number }
 `;
 
+  console.log("[AI REPUTATION] prompt:", prompt);
+
   const res = await openai.responses.create({
     model: "gpt-4o-mini",
     input: prompt,
   });
 
-  const parsed = safeJSONParse(getResponseText(res), {});
+  const raw = getResponseText(res);
+  console.log("[AI REPUTATION] raw response:", raw);
+
+  const parsed = safeJSONParse(raw, {});
+  console.log("[AI REPUTATION] parsed:", parsed);
+
   return typeof parsed.score === "number" ? parsed.score : null;
 }
 
 /* ===================== PRICE ===================== */
 
 export async function getMarketPriceRange(productTitle) {
+  console.log("[PRICE RANGE] title:", productTitle);
+
   if (!productTitle) return null;
 
   const results = await braveSearch(`${productTitle} price`, 6);
@@ -150,9 +194,12 @@ export async function getMarketPriceRange(productTitle) {
     }
   }
 
+  console.log("[PRICE RANGE] prices found:", prices);
+
   if (!prices.length) return null;
 
   prices.sort((a, b) => a - b);
+
   return {
     min: prices[0],
     max: prices[prices.length - 1],
