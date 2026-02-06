@@ -66,6 +66,30 @@ function getResponseText(res) {
   return "";
 }
 
+/* ===================== CATEGORY ===================== */
+
+export async function aiInferCategory(simplifiedTitle) {
+  if (!simplifiedTitle) return null;
+
+  const prompt = `
+Given the product name below, determine the most appropriate product category.
+
+Product:
+${simplifiedTitle}
+
+Return JSON ONLY:
+{ "category": string }
+`;
+
+  const res = await openai.responses.create({
+    model: "gpt-4o-mini",
+    input: prompt,
+  });
+
+  const parsed = safeJSONParse(getResponseText(res), {});
+  return typeof parsed.category === "string" ? parsed.category : null;
+}
+
 /* ===================== REPUTATION ===================== */
 
 export async function getSearchSnippets(query) {
@@ -108,7 +132,7 @@ Return JSON ONLY:
 
 /* ===================== PRICE ===================== */
 
-export async function getMarketPrice(productTitle) {
+export async function getMarketPriceRange(productTitle) {
   if (!productTitle) return null;
 
   const results = await braveSearch(`${productTitle} price`, 6);
@@ -127,6 +151,11 @@ export async function getMarketPrice(productTitle) {
   }
 
   if (!prices.length) return null;
+
   prices.sort((a, b) => a - b);
-  return prices[Math.floor(prices.length / 2)];
+  return {
+    min: prices[0],
+    max: prices[prices.length - 1],
+    median: prices[Math.floor(prices.length / 2)],
+  };
 }
