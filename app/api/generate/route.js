@@ -6,6 +6,7 @@ import {
   aiScaleReputation,
   getMarketPriceRange,
   aiInferCategory,
+  isBraveConfigured,
 } from "./search.js";
 
 function brandSellerMismatch(brand, seller) {
@@ -122,9 +123,9 @@ export async function POST(req) {
       pricePosition,
       integrations: {
         openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
-        braveConfigured: Boolean(process.env.BRAVE_API_KEY),
+        braveConfigured: isBraveConfigured(),
       },
-
+      
       websiteTrust: {
         score: websiteTrustScore,
         reason:
