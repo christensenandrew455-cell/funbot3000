@@ -1,9 +1,11 @@
 import fetch from "node-fetch";
 import { OpenAI } from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function getOpenAIClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  return new OpenAI({ apiKey });
+}
 
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
 const braveCache = new Map();
@@ -87,6 +89,12 @@ export async function aiInferCategory(simplifiedTitle) {
 
   if (!simplifiedTitle) return null;
 
+    const openai = getOpenAIClient();
+  if (!openai) {
+    console.log("[AI CATEGORY] skipped (missing OPENAI_API_KEY)");
+    return null;
+  }
+
   const prompt = `
 Given the product name below, determine the most appropriate product category.
 
@@ -144,6 +152,12 @@ export async function aiScaleReputation(text, subject) {
   console.log(`[AI REPUTATION] input length: ${text?.length}`);
 
   if (!text) return null;
+
+    const openai = getOpenAIClient();
+  if (!openai) {
+    console.log("[AI REPUTATION] skipped (missing OPENAI_API_KEY)");
+    return null;
+  }
 
   const prompt = `
 Rate the trustworthiness of the following ${subject}.
