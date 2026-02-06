@@ -24,6 +24,8 @@ function classifyPrice(price, market) {
 export async function POST(req) {
   try {
     const { url } = await req.json();
+    console.log("[ROUTE] URL:", url);
+
     if (!url) {
       return new Response(JSON.stringify({ error: "Missing URL" }), {
         status: 400,
@@ -31,6 +33,8 @@ export async function POST(req) {
     }
 
     const productInfo = await extractFromHTML(url);
+    console.log("[EXTRACT]", productInfo);
+
     if (!productInfo?.title) {
       return new Response(
         JSON.stringify({ error: "Failed to extract product" }),
@@ -39,13 +43,19 @@ export async function POST(req) {
     }
 
     const simplifiedTitle = simplifyTitle(productInfo.title);
+    console.log("[SIMPLIFIED TITLE]", simplifiedTitle);
+
     const category = simplifiedTitle
       ? await aiInferCategory(simplifiedTitle)
       : null;
 
+    console.log("[CATEGORY]", category);
+
     const market = simplifiedTitle
       ? await getMarketPriceRange(simplifiedTitle)
       : null;
+
+    console.log("[MARKET RANGE]", market);
 
     const brandText = productInfo.brand
       ? await getSearchSnippets(
@@ -77,11 +87,15 @@ export async function POST(req) {
       market
     );
 
+    console.log("[PRICE POSITION]", pricePosition);
+    console.log("[BRAND SCORE]", brandScore);
+    console.log("[SELLER SCORE]", sellerScore);
+    console.log("[MISMATCH]", mismatch);
+
     const aiResult = {
       title: productInfo.title,
       category,
       market,
-
       pricePosition,
 
       productTrust: {
@@ -109,9 +123,11 @@ export async function POST(req) {
           : "good",
     };
 
+    console.log("[FINAL RESULT]", aiResult);
+
     return new Response(JSON.stringify({ aiResult }), { status: 200 });
   } catch (err) {
-    console.error(err);
+    console.error("[ROUTE ERROR]", err);
     return new Response(JSON.stringify({ error: "Server error" }), {
       status: 500,
     });
