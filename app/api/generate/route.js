@@ -6,8 +6,13 @@ import {
   aiScaleReputation,
   getMarketPriceRange,
   aiInferCategory,
-  isBraveConfigured,
 } from "./search.js";
+
+/* ===================== HELPERS ===================== */
+
+function isBraveConfigured() {
+  return Boolean(process.env.BRAVE_API_KEY);
+}
 
 function brandSellerMismatch(brand, seller) {
   if (!brand || !seller) return false;
@@ -26,6 +31,8 @@ function clampScore(score, fallback = 2) {
   if (typeof score !== "number" || Number.isNaN(score)) return fallback;
   return Math.max(1, Math.min(5, Math.round(score)));
 }
+
+/* ===================== ROUTE ===================== */
 
 export async function POST(req) {
   try {
@@ -89,7 +96,9 @@ export async function POST(req) {
     );
 
     const pricePosition = classifyPrice(
-      productInfo.price ? parseFloat(productInfo.price.replace("$", "")) : null,
+      productInfo.price
+        ? parseFloat(productInfo.price.replace("$", ""))
+        : null,
       market
     );
 
@@ -98,8 +107,11 @@ export async function POST(req) {
     console.log("[SELLER SCORE]", sellerScore);
     console.log("[MISMATCH]", mismatch);
 
-        const productTrustScore = clampScore(brandScore, 2);
-    const sellerTrustScore = clampScore(mismatch ? 1 : sellerScore, mismatch ? 1 : 2);
+    const productTrustScore = clampScore(brandScore, 2);
+    const sellerTrustScore = clampScore(
+      mismatch ? 1 : sellerScore,
+      mismatch ? 1 : 2
+    );
 
     const websiteTrustScore = clampScore(
       (() => {
@@ -112,7 +124,9 @@ export async function POST(req) {
     );
 
     const overallScore = clampScore(
-      Math.round((productTrustScore + sellerTrustScore + websiteTrustScore) / 3),
+      Math.round(
+        (productTrustScore + sellerTrustScore + websiteTrustScore) / 3
+      ),
       2
     );
 
@@ -121,11 +135,12 @@ export async function POST(req) {
       category,
       market,
       pricePosition,
+
       integrations: {
         openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
         braveConfigured: isBraveConfigured(),
       },
-      
+
       websiteTrust: {
         score: websiteTrustScore,
         reason:
@@ -137,7 +152,7 @@ export async function POST(req) {
             ? "Price appears within normal market range."
             : "Not enough pricing data to judge website trust confidently.",
       },
-      
+
       productTrust: {
         score: productTrustScore,
         reason: brandText
@@ -154,7 +169,7 @@ export async function POST(req) {
           : "No seller information found.",
       },
 
-            overall: {
+      overall: {
         score: overallScore,
         reason:
           overallScore <= 2
