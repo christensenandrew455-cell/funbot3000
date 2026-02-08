@@ -8,9 +8,11 @@ import {
   isBraveConfigured,
 } from "./search.js";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function getOpenAIClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  return new OpenAI({ apiKey });
+}
 
 /* ===================== HELPERS ===================== */
 
@@ -59,6 +61,9 @@ function clampScore(score, fallback = 2) {
 async function aiInferCategory(simplifiedTitle) {
   if (!simplifiedTitle) return null;
 
+  const openai = getOpenAIClient();
+  if (!openai) return null;
+
   const prompt = `
 Given the product name below, determine the most appropriate product category.
 
@@ -80,6 +85,9 @@ Return JSON ONLY:
 
 async function getMarketPriceRange(productTitle, category = null) {
   if (!productTitle) return null;
+
+  const openai = getOpenAIClient();
+  if (!openai) return null;
 
   const prompt = `
 Estimate the typical online market price range for the product below.
