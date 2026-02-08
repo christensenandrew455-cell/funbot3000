@@ -1,17 +1,38 @@
 export const runtime = "nodejs";
 
+import { OpenAI } from "openai";
 import { extractFromHTML, simplifyTitle } from "./extract.js";
 import {
   getSearchSnippets,
-  aiScaleReputation,
-  getMarketPriceRange,
-  aiInferCategory,
+  isBraveConfigured,
 } from "./search.js";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 /* ===================== HELPERS ===================== */
 
-function isBraveConfigured() {
-  return Boolean(process.env.BRAVE_API_KEY);
+function safeJSONParse(text, fallback = {}) {
+  try {
+    const match = text
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .match(/\{[\s\S]*\}/);
+    return match ? JSON.parse(match[0]) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function getResponseText(res) {
+  if (res.output_text) return res.output_text;
+  for (const msg of res.output || []) {
+    for (const c of msg.content || []) {
+      if (c.text) return c.text;
+    }
+  }
+  return "";
 }
 
 function brandSellerMismatch(brand, seller) {
@@ -30,6 +51,95 @@ function classifyPrice(price, market) {
 function clampScore(score, fallback = 2) {
   if (typeof score !== "number" || Number.isNaN(score)) return fallback;
   return Math.max(1, Math.min(5, Math.round(score)));
+}
+
+async function aiInferCategory(simplifiedTitle) {
+  if (!simplifiedTitle) return null;
+
+  const prompt = `
+Given the product name below, determine the most appropriate product category.
+
+Product:
+${simplifiedTitle}
+
+Return JSON ONLY:
+{ "category": string }
+`;
+
+  const res = await openai.responses.create({
+    model: "gpt-4o-mini",
+    input: prompt,
+  });
+
+  const parsed = safeJSONParse(getResponseText(res), {});
+  return typeof parsed.category === "string" ? parsed.category : null;
+}
+
+async function aiScaleReputation(text, subject) {
+  if (!text) return null;
+
+  const prompt = `
+Rate the trustworthiness of the following ${subject}.
+Scale from 1 (bad/untrustworthy) to 5 (good/trustworthy).
+
+Text:
+${text}
+
+Return JSON ONLY:
+{ "score": number }
+`;
+
+  const res = await openai.responses.create({
+    model: "gpt-4o-mini",
+    input: prompt,
+  });
+
+  const parsed = safeJSONParse(getResponseText(res), {});
+  return typeof parsed.score === "number" ? parsed.score : null;
+}
+
+async function getMarketPriceRange(productTitle, category = null) {
+  if (!productTitle) return null;
+
+  const prompt = `
+Estimate the typical online market price range for the product below.
+Assume common retailers (Amazon, Walmart, Target, etc).
+Do NOT guess extreme values.
+
+Product:
+${productTitle}
+Category:
+${category || "unknown"}
+
+Return JSON ONLY:
+{
+  "min": number,
+  "max": number,
+  "median": number
+}
+`;
+
+  const res = await openai.responses.create({
+    model: "gpt-5-nano",
+    input: prompt,
+  });
+
+  const parsed = safeJSONParse(getResponseText(res), null);
+
+  if (
+    !parsed ||
+    typeof parsed.min !== "number" ||
+    typeof parsed.max !== "number" ||
+    typeof parsed.median !== "number"
+  ) {
+    return null;
+  }
+
+  return {
+    min: parsed.min,
+    max: parsed.max,
+    median: parsed.median,
+  };
 }
 
 /* ===================== WEBSITE TRUST ===================== */
@@ -82,15 +192,20 @@ export async function POST(req) {
         ? await getMarketPriceRange(simplifiedTitle, category)
         : null;
 
-    const brandText = productInfo.brand
-      ? await getSearchSnippets(
-          `"${productInfo.brand}" reviews company information`
-        )
+    const brandQuery = productInfo.brand || simplifiedTitle;
+    const sellerQuery =
+      productInfo.seller ||
+      (productInfo.platform
+        ? `${productInfo.platform} seller`
+        : simplifiedTitle);
+
+    const brandText = brandQuery
+      ? await getSearchSnippets(`"${brandQuery}" reviews company information`)
       : null;
 
-    const sellerText = productInfo.seller
+    const sellerText = sellerQuery
       ? await getSearchSnippets(
-          `"${productInfo.seller}" seller reviews business information`
+          `"${sellerQuery}" seller reviews business information`
         )
       : null;
 
