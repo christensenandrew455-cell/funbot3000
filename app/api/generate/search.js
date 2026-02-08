@@ -1,6 +1,9 @@
 import fetch from "node-fetch";
 
-const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
+const BRAVE_API_KEY =
+  process.env.BRAVE_API_KEY ||
+  process.env.BRAVE_SEARCH_API_KEY ||
+  process.env.BRAVE_SEARCH_KEY;
 const braveCache = new Map();
 
 /* ===================== CONFIG ===================== */
@@ -51,13 +54,23 @@ export async function getSearchSnippets(query) {
   const results = await braveSearch(query, 6);
   if (!results.length) return null;
 
-  return results
+  const filtered = results
     .filter(
       r =>
         r.snippet &&
         r.snippet.length > 60 &&
         !/coupon|deal|buy now|% off|sponsored/i.test(r.snippet)
     )
-    .map(r => `${r.title || ""} — ${r.snippet || ""}`)
-    .join("\n");
+    .map(r => `${r.title || ""} — ${r.snippet || ""}`);
+
+  const usable = filtered.length
+    ? filtered
+    : results
+        .filter(r => r.snippet)
+        .slice(0, 3)
+        .map(r => `${r.title || ""} — ${r.snippet || ""}`);
+
+  if (!usable.length) return null;
+
+  return usable.join("\n");
 }
