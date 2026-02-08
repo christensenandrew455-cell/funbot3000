@@ -3,7 +3,8 @@ export const runtime = "nodejs";
 import { OpenAI } from "openai";
 import { extractFromHTML, simplifyTitle } from "./extract.js";
 import {
-  getSearchSnippets,
+  analyzeBrand,
+  analyzeSeller,
   isBraveConfigured,
 } from "./search.js";
 
@@ -53,6 +54,8 @@ function clampScore(score, fallback = 2) {
   return Math.max(1, Math.min(5, Math.round(score)));
 }
 
+/* ===================== AI HELPERS ===================== */
+
 async function aiInferCategory(simplifiedTitle) {
   if (!simplifiedTitle) return null;
 
@@ -73,29 +76,6 @@ Return JSON ONLY:
 
   const parsed = safeJSONParse(getResponseText(res), {});
   return typeof parsed.category === "string" ? parsed.category : null;
-}
-
-async function aiScaleReputation(text, subject) {
-  if (!text) return null;
-
-  const prompt = `
-Rate the trustworthiness of the following ${subject}.
-Scale from 1 (bad/untrustworthy) to 5 (good/trustworthy).
-
-Text:
-${text}
-
-Return JSON ONLY:
-{ "score": number }
-`;
-
-  const res = await openai.responses.create({
-    model: "gpt-4o-mini",
-    input: prompt,
-  });
-
-  const parsed = safeJSONParse(getResponseText(res), {});
-  return typeof parsed.score === "number" ? parsed.score : null;
 }
 
 async function getMarketPriceRange(productTitle, category = null) {
@@ -135,11 +115,7 @@ Return JSON ONLY:
     return null;
   }
 
-  return {
-    min: parsed.min,
-    max: parsed.max,
-    median: parsed.median,
-  };
+  return parsed;
 }
 
 /* ===================== WEBSITE TRUST ===================== */
@@ -183,6 +159,7 @@ export async function POST(req) {
     }
 
     const simplifiedTitle = simplifyTitle(productInfo.title);
+
     const category = simplifiedTitle
       ? await aiInferCategory(simplifiedTitle)
       : null;
@@ -192,35 +169,18 @@ export async function POST(req) {
         ? await getMarketPriceRange(simplifiedTitle, category)
         : null;
 
-    const brandQuery = productInfo.brand || simplifiedTitle;
-    const sellerQuery =
-      productInfo.seller ||
-      (productInfo.platform
-        ? `${productInfo.platform} seller`
-        : simplifiedTitle);
+    /* ===================== BRAND / SELLER INTEL ===================== */
 
-    const brandText = brandQuery
-      ? await getSearchSnippets(`"${brandQuery}" reviews company information`)
-      : null;
-
-    const sellerText = sellerQuery
-      ? await getSearchSnippets(
-          `"${sellerQuery}" seller reviews business information`
-        )
-      : null;
-
-    const brandScore = brandText
-      ? await aiScaleReputation(brandText, "brand")
-      : null;
-
-    const sellerScore = sellerText
-      ? await aiScaleReputation(sellerText, "seller")
-      : null;
-
-    const mismatch = brandSellerMismatch(
-      productInfo.brand,
-      productInfo.seller
+    const brandIntel = await analyzeBrand(
+      productInfo.brand || simplifiedTitle
     );
+
+    const sellerIntel = await analyzeSeller({
+      seller: productInfo.seller,
+      platform: productInfo.platform,
+    });
+
+    /* ===================== PRICE SIGNAL ===================== */
 
     const numericPrice = productInfo.price
       ? parseFloat(productInfo.price.replace("$", ""))
@@ -228,16 +188,34 @@ export async function POST(req) {
 
     const pricePosition = classifyPrice(numericPrice, market);
 
-    /* ===================== SCORES ===================== */
+    const mismatch = brandSellerMismatch(
+      productInfo.brand,
+      productInfo.seller
+    );
 
-    const productTrustScore = clampScore(brandScore, 2);
+    /* ===================== SCORING ===================== */
 
-    let adjustedSellerScore = sellerScore ?? 2;
-    if (pricePosition === "suspiciously_low") adjustedSellerScore -= 1;
-    if (pricePosition === "suspiciously_high") adjustedSellerScore -= 1;
-    if (mismatch) adjustedSellerScore = 1;
+    // PRODUCT / BRAND TRUST
+    const productTrustScore = clampScore(
+      !brandIntel?.exists
+        ? 1
+        : brandIntel.signals?.complaints
+        ? 1
+        : 3,
+      2
+    );
 
-    const sellerTrustScore = clampScore(adjustedSellerScore, 2);
+    // SELLER TRUST
+    let sellerTrustScore = !sellerIntel?.exists
+      ? 2
+      : sellerIntel.signals?.complaints
+      ? 1
+      : 3;
+
+    if (pricePosition !== "reasonable") sellerTrustScore -= 1;
+    if (mismatch) sellerTrustScore = 1;
+
+    sellerTrustScore = clampScore(sellerTrustScore, 2);
 
     const websiteTrust = scoreWebsiteByPlatform(productInfo.platform);
 
@@ -245,8 +223,7 @@ export async function POST(req) {
       Math.round(
         (productTrustScore +
           sellerTrustScore +
-          websiteTrust.score) /
-          3
+          websiteTrust.score) / 3
       ),
       2
     );
@@ -268,32 +245,23 @@ export async function POST(req) {
 
       sellerTrust: {
         score: sellerTrustScore,
-        reason:
-          pricePosition === "suspiciously_low"
-            ? "Seller pricing is unusually low, often associated with low-quality or misleading listings."
-            : pricePosition === "suspiciously_high"
-            ? "Seller pricing is significantly higher than comparable listings."
-            : mismatch
-            ? "Seller does not appear to be the original brand."
-            : sellerText
-            ? "External seller information found."
-            : "Limited seller information available.",
+        reason: sellerIntel?.summary ||
+          "Limited seller information available.",
       },
 
       productTrust: {
         score: productTrustScore,
-        reason: brandText
-          ? "External brand information found."
-          : "No external brand information found.",
+        reason: brandIntel?.summary ||
+          "No independent brand information found.",
       },
 
       overall: {
         score: overallScore,
         reason:
           overallScore <= 2
-            ? "Multiple trust signals are weak. Proceed with caution."
+            ? "Multiple trust signals indicate a high risk of scam."
             : overallScore === 3
-            ? "Mixed trust signals. Verify seller details."
+            ? "Mixed trust signals. Verify seller and brand carefully."
             : "Trust signals look healthy based on available data.",
       },
 
