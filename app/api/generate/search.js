@@ -9,6 +9,10 @@ const cache = new Map();
 
 /* ===================== CORE SEARCH ===================== */
 
+export function isBraveConfigured() {
+  return Boolean(BRAVE_API_KEY);
+}
+
 async function braveSearch(query, count = 7) {
   if (!query || !BRAVE_API_KEY) return [];
 
