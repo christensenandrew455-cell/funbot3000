@@ -14,6 +14,46 @@ export function normalizeBrand(raw) {
     .toLowerCase();
 }
 
+function collectJsonLdNodes(value, nodes) {
+  if (!value) return;
+  if (Array.isArray(value)) {
+    value.forEach(item => collectJsonLdNodes(item, nodes));
+    return;
+  }
+  if (typeof value === "object") {
+    nodes.push(value);
+    if (value["@graph"]) collectJsonLdNodes(value["@graph"], nodes);
+  }
+}
+
+function findJsonLdProduct($) {
+  const nodes = [];
+  $("script[type='application/ld+json']").each((_, el) => {
+    const text = $(el).text();
+    if (!text) return;
+    try {
+      const parsed = JSON.parse(text);
+      collectJsonLdNodes(parsed, nodes);
+    } catch {
+      return;
+    }
+  });
+
+  return nodes.find(node => {
+    const type = node?.["@type"];
+    if (!type) return false;
+    if (Array.isArray(type)) return type.includes("Product");
+    return type === "Product";
+  });
+}
+
+function getJsonLdString(value) {
+  if (!value) return null;
+  if (typeof value === "string") return value;
+  if (typeof value.name === "string") return value.name;
+  return null;
+}
+
 export function simplifyTitle(title) {
   if (!title) return null;
 
@@ -50,13 +90,24 @@ export async function extractFromHTML(url) {
 
     const html = await res.text();
     const $ = cheerio.load(html);
-
+    const productJsonLd = findJsonLdProduct($);
+    
     const title =
+      getJsonLdString(productJsonLd?.name) ||
       $('meta[property="og:title"]').attr("content") ||
       $("title").first().text() ||
       null;
 
+        const jsonLdOffers = productJsonLd?.offers;
+    const offers = Array.isArray(jsonLdOffers)
+      ? jsonLdOffers
+      : jsonLdOffers
+      ? [jsonLdOffers]
+      : [];
+    const primaryOffer = offers[0] || null;
+
     let price =
+      (primaryOffer?.price ?? primaryOffer?.priceSpecification?.price) ||
       $('meta[property="product:price:amount"]').attr("content") ||
       $('[itemprop="price"]').attr("content") ||
       $('[class*="price"]').first().text() ||
@@ -68,6 +119,7 @@ export async function extractFromHTML(url) {
     }
 
     let seller =
+      getJsonLdString(primaryOffer?.seller) ||
       $("#sellerProfileTriggerId").text() ||
       $("#bylineInfo").text() ||
       null;
@@ -75,6 +127,7 @@ export async function extractFromHTML(url) {
     if (seller) seller = seller.replace(/\s+/g, " ").trim();
 
     let brand =
+      getJsonLdString(productJsonLd?.brand) ||
       $('[itemprop="brand"]').text() ||
       $('#productOverview_feature_div tr:contains("Brand") td').text() ||
       null;
