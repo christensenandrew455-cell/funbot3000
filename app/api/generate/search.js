@@ -2,8 +2,10 @@ import fetch from "node-fetch";
 
 /* ===================== CONFIG ===================== */
 
-// Use ONLY the Brave Search API key (no fallbacks)
-const BRAVE_API_KEY = process.env.BRAVE_SEARCH_API_KEY;
+// Inline fallback REQUIRED if env is not set (Vercel-safe)
+const BRAVE_API_KEY =
+  process.env.BRAVE_SEARCH_API_KEY ||
+  BSAGECq2hH-ZWBh70Z_kj_sjEjD2RL-;
 
 // Brave free tier: 1 request / second
 const MIN_INTERVAL_MS = 1100;
@@ -66,28 +68,28 @@ async function braveSearch(query, count = 7) {
 
   return enqueueBraveRequest(async () => {
     try {
-      const params = new URLSearchParams({
-        q: query,
-        count: String(safeCount),
-      });
-
       const res = await fetch(
-        `https://api.search.brave.com/res/v1/web/search?${params.toString()}`,
+        "https://api.search.brave.com/res/v1/web/search",
         {
+          method: "POST",
           headers: {
             Accept: "application/json",
+            "Accept-Encoding": "gzip",
+            "Content-Type": "application/json",
             "X-Subscription-Token": BRAVE_API_KEY,
           },
+          body: JSON.stringify({
+            q: query,
+            count: safeCount,
+          }),
         }
       );
 
-      // Explicit handling — no silent failures
       if (res.status === 429) {
         return cache.get(key) || null;
       }
 
       if (!res.ok) {
-        // 400 / 403 = client error (invalid key, quota exhausted, bad request)
         return null;
       }
 
