@@ -2,13 +2,15 @@ import fetch from "node-fetch";
 
 /* ===================== CONFIG ===================== */
 
-const BRAVE_API_KEY =
-  process.env.BRAVE_API_KEY ||
-  process.env.BRAVE_SEARCH_API_KEY ||
-  process.env.BRAVE_SEARCH_KEY;
+// Use ONLY the Brave Search API key (no fallbacks)
+const BRAVE_API_KEY = process.env.BRAVE_SEARCH_API_KEY;
 
 // Brave free tier: 1 request / second
 const MIN_INTERVAL_MS = 1100;
+
+// Brave-safe bounds
+const MIN_COUNT = 1;
+const MAX_COUNT = 10;
 
 /* ===================== STATE ===================== */
 
@@ -22,7 +24,7 @@ let queue = Promise.resolve();
 /* ===================== HELPERS ===================== */
 
 export function isBraveConfigured() {
-  return Boolean(BRAVE_API_KEY);
+  return typeof BRAVE_API_KEY === "string" && BRAVE_API_KEY.length > 20;
 }
 
 function sleep(ms) {
@@ -52,44 +54,47 @@ function enqueueBraveRequest(fn) {
 /* ===================== CORE SEARCH ===================== */
 
 async function braveSearch(query, count = 7) {
-  if (!query || !BRAVE_API_KEY) return null;
+  if (!query || !isBraveConfigured()) return null;
 
-  const key = `${query}:${count}`;
+  const safeCount = Math.min(
+    MAX_COUNT,
+    Math.max(MIN_COUNT, Number(count) || 7)
+  );
+
+  const key = `${query}:${safeCount}`;
   if (cache.has(key)) return cache.get(key);
 
   return enqueueBraveRequest(async () => {
     try {
+      const params = new URLSearchParams({
+        q: query,
+        count: String(safeCount),
+      });
+
       const res = await fetch(
-        `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(
-          query
-        )}&count=${count}`,
+        `https://api.search.brave.com/res/v1/web/search?${params.toString()}`,
         {
           headers: {
             Accept: "application/json",
             "X-Subscription-Token": BRAVE_API_KEY,
-            "User-Agent": "Mozilla/5.0",
           },
         }
       );
 
-      // ---- RATE LIMIT HANDLING ----
+      // Explicit handling — no silent failures
       if (res.status === 429) {
-        // Optional: inspect headers during debugging
-        // console.warn("Brave 429", {
-        //   remaining: res.headers.get("x-ratelimit-remaining"),
-        //   limit: res.headers.get("x-ratelimit-limit"),
-        // });
-
-        // Fallback to cache if available
         return cache.get(key) || null;
       }
 
-      if (!res.ok) return null;
+      if (!res.ok) {
+        // 400 / 403 = client error (invalid key, quota exhausted, bad request)
+        return null;
+      }
 
       const data = await res.json();
 
       const results = (data?.web?.results || []).filter(
-        r => !r.is_ad && r.type !== "ad"
+        r => !r?.is_ad && r?.type !== "ad"
       );
 
       cache.set(key, results);
@@ -115,7 +120,7 @@ function extractEvidence(results) {
 export async function analyzeBrand(brandName) {
   if (!brandName) return null;
 
-  const query = `"${brandName}" brand company manufacturer`;
+  const query = `${brandName} brand company manufacturer`;
   const results = await braveSearch(query, 6);
   const text = extractEvidence(results);
 
@@ -154,7 +159,7 @@ export async function analyzeSeller({ seller, platform }) {
 
   if (!subject) return null;
 
-  const query = `"${subject}" seller reviews scam complaints`;
+  const query = `${subject} seller reviews scam complaints`;
   const results = await braveSearch(query, 6);
   const text = extractEvidence(results);
 
