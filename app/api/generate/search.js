@@ -2,10 +2,8 @@ import fetch from "node-fetch";
 
 /* ===================== CONFIG ===================== */
 
-// Inline fallback REQUIRED if env is not set (Vercel-safe)
-const BRAVE_API_KEY =
-  process.env.BRAVE_SEARCH_API_KEY ||
-  BSAGECq2hH-ZWBh70Z_kj_sjEjD2RL-;
+// Brave Search API key (ENV ONLY — do not inline)
+const BRAVE_API_KEY = process.env.BRAVE_SEARCH_API_KEY;
 
 // Brave free tier: 1 request / second
 const MIN_INTERVAL_MS = 1100;
@@ -16,10 +14,10 @@ const MAX_COUNT = 10;
 
 /* ===================== STATE ===================== */
 
-// In-memory cache (best-effort on serverless)
+// Best-effort in-memory cache (serverless-safe but ephemeral)
 const cache = new Map();
 
-// Global throttle state (shared per runtime)
+// Global throttle state (per runtime)
 let lastRequestTime = 0;
 let queue = Promise.resolve();
 
@@ -34,7 +32,7 @@ function sleep(ms) {
 }
 
 /**
- * Ensures Brave requests run sequentially
+ * Ensures Brave requests are sequential
  * and never exceed 1 request / second.
  */
 function enqueueBraveRequest(fn) {
@@ -63,32 +61,33 @@ async function braveSearch(query, count = 7) {
     Math.max(MIN_COUNT, Number(count) || 7)
   );
 
-  const key = `${query}:${safeCount}`;
-  if (cache.has(key)) return cache.get(key);
+  const cacheKey = `${query}:${safeCount}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey);
 
   return enqueueBraveRequest(async () => {
     try {
+      const params = new URLSearchParams({
+        q: query,
+        count: String(safeCount),
+      });
+
       const res = await fetch(
-        "https://api.search.brave.com/res/v1/web/search",
+        `https://api.search.brave.com/res/v1/web/search?${params.toString()}`,
         {
-          method: "POST",
+          method: "GET",
           headers: {
             Accept: "application/json",
-            "Accept-Encoding": "gzip",
-            "Content-Type": "application/json",
             "X-Subscription-Token": BRAVE_API_KEY,
           },
-          body: JSON.stringify({
-            q: query,
-            count: safeCount,
-          }),
         }
       );
 
+      // Rate limit: return cached data if possible
       if (res.status === 429) {
-        return cache.get(key) || null;
+        return cache.get(cacheKey) || null;
       }
 
+      // Client errors: bad key, quota, malformed request
       if (!res.ok) {
         return null;
       }
@@ -99,7 +98,7 @@ async function braveSearch(query, count = 7) {
         r => !r?.is_ad && r?.type !== "ad"
       );
 
-      cache.set(key, results);
+      cache.set(cacheKey, results);
       return results;
     } catch {
       return null;
@@ -108,13 +107,13 @@ async function braveSearch(query, count = 7) {
 }
 
 function extractEvidence(results) {
-  if (!results?.length) return null;
+  if (!results || results.length === 0) return null;
 
   const snippets = results
-    .filter(r => r.snippet && r.snippet.length > 50)
+    .filter(r => typeof r?.snippet === "string" && r.snippet.length > 50)
     .map(r => r.snippet);
 
-  return snippets.length ? snippets.join("\n") : null;
+  return snippets.length > 0 ? snippets.join("\n") : null;
 }
 
 /* ===================== BRAND INTELLIGENCE ===================== */
@@ -131,7 +130,10 @@ export async function analyzeBrand(brandName) {
       exists: false,
       confidence: "low",
       summary: "No independent information found about this brand.",
-      signals: { complaints: false, ecommerceBrand: false },
+      signals: {
+        complaints: false,
+        ecommerceBrand: false,
+      },
       rawText: null,
     };
   }
@@ -156,9 +158,7 @@ export async function analyzeBrand(brandName) {
 /* ===================== SELLER INTELLIGENCE ===================== */
 
 export async function analyzeSeller({ seller, platform }) {
-  const subject =
-    seller || (platform ? `${platform} seller` : null);
-
+  const subject = seller || (platform ? `${platform} seller` : null);
   if (!subject) return null;
 
   const query = `${subject} seller reviews scam complaints`;
@@ -170,7 +170,10 @@ export async function analyzeSeller({ seller, platform }) {
       exists: false,
       confidence: "low",
       summary: "No independent seller information found.",
-      signals: { complaints: false, marketplace: false },
+      signals: {
+        complaints: false,
+        marketplace: false,
+      },
       rawText: null,
     };
   }
