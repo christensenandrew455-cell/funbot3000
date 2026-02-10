@@ -14,9 +14,14 @@ export function normalizeBrand(raw) {
     .toLowerCase();
 }
 
+/* ===================== JSON-LD HELPERS ===================== */
+
 function collectJsonLdNodes(value, nodes) {
   if (!value) return;
-  if (Array.isArray(value)) return value.forEach(v => collectJsonLdNodes(v, nodes));
+  if (Array.isArray(value)) {
+    value.forEach(v => collectJsonLdNodes(v, nodes));
+    return;
+  }
   if (typeof value === "object") {
     nodes.push(value);
     if (value["@graph"]) collectJsonLdNodes(value["@graph"], nodes);
@@ -25,17 +30,21 @@ function collectJsonLdNodes(value, nodes) {
 
 function findJsonLdProduct($) {
   const nodes = [];
+
   $("script[type='application/ld+json']").each((_, el) => {
+    const text = $(el).text();
+    if (!text) return;
     try {
-      collectJsonLdNodes(JSON.parse($(el).text()), nodes);
+      collectJsonLdNodes(JSON.parse(text), nodes);
     } catch {}
   });
 
-  return nodes.find(n =>
-    Array.isArray(n?.["@type"])
-      ? n["@type"].includes("Product")
-      : n?.["@type"] === "Product"
-  );
+  return nodes.find(node => {
+    const type = node?.["@type"];
+    if (!type) return false;
+    if (Array.isArray(type)) return type.includes("Product");
+    return type === "Product";
+  });
 }
 
 function getJsonLdString(value) {
@@ -44,6 +53,8 @@ function getJsonLdString(value) {
   if (typeof value?.name === "string") return value.name;
   return null;
 }
+
+/* ===================== TITLE CLEAN ===================== */
 
 export function simplifyTitle(title) {
   if (!title) return null;
@@ -63,34 +74,70 @@ export function simplifyTitle(title) {
 export async function extractFromHTML(url) {
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0", Accept: "text/html" },
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/121",
+        Accept: "text/html",
+      },
     });
+
     if (!res.ok) return null;
 
     const html = await res.text();
+
+    // HARD BLOCK DETECTION (Amazon captcha / soft block)
+    if (
+      html.length < 5000 ||
+      /captcha|robot check|automated access/i.test(html)
+    ) {
+      return null;
+    }
+
     const $ = cheerio.load(html);
     const productJsonLd = findJsonLdProduct($);
 
-    const title =
+    /* ===== TITLE ===== */
+
+    const jsonTitle =
       getJsonLdString(productJsonLd?.name) ||
       $('meta[property="og:title"]').attr("content") ||
       $("title").first().text() ||
       null;
 
-    const offers = [].concat(productJsonLd?.offers || []);
-    const primaryOffer = offers[0];
+    const amazonTitle = $("#productTitle").text()?.trim() || null;
+
+    const finalTitle = jsonTitle || amazonTitle;
+    if (!finalTitle) return null;
+
+    /* ===== OFFERS / PRICE ===== */
+
+    const jsonOffers = productJsonLd?.offers;
+    const offers = Array.isArray(jsonOffers)
+      ? jsonOffers
+      : jsonOffers
+      ? [jsonOffers]
+      : [];
+
+    const primaryOffer = offers[0] || null;
 
     let price =
       primaryOffer?.price ||
       primaryOffer?.priceSpecification?.price ||
+      $('meta[property="product:price:amount"]').attr("content") ||
       $('[itemprop="price"]').attr("content") ||
-      $('[class*="price"]').first().text() ||
       null;
 
+    const amazonPrice =
+      $(".a-price .a-offscreen").first().text() || null;
+
+    price = price || amazonPrice;
+
     if (price) {
-      const m = price.match(/\$?\d+(\.\d{2})?/);
-      price = m ? m[0] : null;
+      const match = price.match(/\$?\d+(\.\d{2})?/);
+      price = match ? match[0] : null;
     }
+
+    /* ===== SELLER ===== */
 
     let seller =
       getJsonLdString(primaryOffer?.seller) ||
@@ -98,24 +145,34 @@ export async function extractFromHTML(url) {
       $("#bylineInfo").text() ||
       null;
 
+    const amazonSeller =
+      $("#merchant-info").text()?.trim() || null;
+
+    seller = seller || amazonSeller;
     if (seller) seller = seller.replace(/\s+/g, " ").trim();
+
+    /* ===== BRAND ===== */
 
     let brand =
       getJsonLdString(productJsonLd?.brand) ||
       $('[itemprop="brand"]').text() ||
+      $('#productOverview_feature_div tr:contains("Brand") td').text() ||
       null;
 
     brand = normalizeBrand(brand);
 
+    /* ===== FINAL OBJECT ===== */
+
     return {
-      title,
+      title: finalTitle,
       price,
       seller,
       brand,
       platform: new URL(url).hostname.replace("www.", ""),
       source: "html",
     };
-  } catch {
+  } catch (err) {
+    console.error("extractFromHTML error:", err);
     return null;
   }
 }
