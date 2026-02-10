@@ -33,7 +33,7 @@ function clamp(n) {
 function getEntityScore(intel, fallback = 3) {
   if (!intel) return fallback;
   if (intel.positive && !intel.negative) return 4;
-  if (intel.negative && !intel.positive) return 3;
+  if (intel.negative && !intel.positive) return 2;
   if (intel.positive && intel.negative) return 3;
   return fallback;
 }
@@ -67,7 +67,8 @@ Infer a retail category.
 Product:
 ${name}
 
-Return JSON only: { "category": string }
+Return JSON only:
+{ "category": string }
 `,
   });
 
@@ -94,19 +95,30 @@ Return JSON only:
   return safeJSON(r.output_text);
 }
 
-async function aiEntity(name, evidence) {
+async function aiEntity(name, evidence, context = "") {
   const openai = getClient();
   if (!openai) return null;
 
   const r = await openai.responses.create({
     model: "gpt-4o-mini",
     input: `
-Evaluate entity using ONLY evidence.
+Evaluate this entity using reasoning.
 
-Name: ${name}
-Evidence: ${evidence || "None"}
+Entity name: ${name}
 
-Return JSON:
+Context:
+${context || "None"}
+
+Evidence:
+${evidence || "None"}
+
+Consider:
+- legitimacy and reputation
+- alignment with brand / platform if applicable
+- consistency (e.g. brand vs seller mismatch)
+- common consumer risk patterns
+
+Return JSON only:
 {
   "exists": boolean,
   "positive": boolean,
@@ -119,19 +131,57 @@ Return JSON:
   return safeJSON(r.output_text);
 }
 
-/* ===================== WEBSITE ===================== */
+async function aiCategoryFit(product, category) {
+  const openai = getClient();
+  if (!openai) return null;
 
-function websiteTrust(platform) {
-  if (!platform) return { score: 3, reason: "Unknown platform." };
+  const r = await openai.responses.create({
+    model: "gpt-4o-mini",
+    input: `
+Evaluate product suitability.
 
-  if (platform.includes("amazon")) {
-    return {
-      score: 4,
-      reason: "Large marketplace; trust depends on individual seller.",
-    };
-  }
+Product: ${product}
+Category: ${category}
 
-  return { score: 3, reason: "Independent website with limited data." };
+Is this product commonly appropriate,
+useful, and expected for this category?
+
+Return JSON only:
+{
+  "appropriate": boolean,
+  "summary": string
+}
+`,
+  });
+
+  return safeJSON(r.output_text);
+}
+
+async function aiWebsiteTrust(platform) {
+  const openai = getClient();
+  if (!openai) return { score: 3, reason: "Unknown platform." };
+
+  const r = await openai.responses.create({
+    model: "gpt-4o-mini",
+    input: `
+Evaluate website trustworthiness.
+
+Domain: ${platform}
+
+Consider:
+- general reputation
+- marketplace vs independent store
+- consumer risk patterns
+
+Return JSON only:
+{
+  "score": number,
+  "reason": string
+}
+`,
+  });
+
+  return safeJSON(r.output_text) || { score: 3, reason: "Unknown platform." };
 }
 
 /* ===================== ROUTE ===================== */
@@ -146,7 +196,10 @@ export async function POST(req) {
       return Response.json({ error: "Extraction failed" }, { status: 400 });
 
     const title = simplifyTitle(product.title);
+
     const category = await aiCategory(title);
+    const categoryFit = await aiCategoryFit(title, category);
+
     const market = await aiMarketPrice(title, category);
 
     const price = product.price
@@ -161,23 +214,24 @@ export async function POST(req) {
 
     const sellerEvidence = await searchSellerEvidence(product);
 
+    const sellerContext = `
+Brand: ${product.brand || "unknown"}
+Seller: ${product.seller || "unknown"}
+Platform: ${product.platform}
+Price position: ${pricePosition}
+`;
+
     const brandIntel = await aiEntity(product.brand, brandEvidence);
-    const sellerIntel = await aiEntity(product.seller, sellerEvidence);
+    const sellerIntel = await aiEntity(
+      product.seller || product.platform,
+      sellerEvidence,
+      sellerContext
+    );
+
+    const website = await aiWebsiteTrust(product.platform);
 
     const productScore = clamp(getEntityScore(brandIntel));
-
-    const sellerBase = getEntityScore(sellerIntel, 3);
-    const sellerPriceAdjustment =
-      pricePosition === "fair"
-        ? 0.5
-        : pricePosition === "low"
-        ? -0.25
-        : pricePosition === "high"
-        ? -0.1
-        : 0;
-    const sellerScore = clamp(sellerBase + sellerPriceAdjustment);
-
-    const website = websiteTrust(product.platform);
+    const sellerScore = clamp(getEntityScore(sellerIntel));
 
     const informationCoverageBoost =
       (product.brand ? 0.2 : 0) +
@@ -185,15 +239,18 @@ export async function POST(req) {
       (price ? 0.2 : 0);
 
     const overall = clamp(
-     productScore * 0.35 +
+      productScore * 0.35 +
         sellerScore * 0.35 +
         website.score * 0.3 +
         informationCoverageBoost
     );
 
-     const overallReason = [
-      `Balanced from website (${website.score}/5), seller (${sellerScore}/5), and product (${productScore}/5) trust.`,
-      `Price looked ${pricePosition === "unknown" ? "unclear" : pricePosition} versus market expectations.`,
+    const overallReason = [
+      `Website trust: ${website.score}/5.`,
+      `Seller trust: ${sellerScore}/5.`,
+      `Product/brand trust: ${productScore}/5.`,
+      `Price appears ${pricePosition} relative to market.`,
+      categoryFit?.summary || null,
       signalText([
         product.brand ? "brand" : null,
         product.seller ? "seller" : null,
@@ -201,20 +258,17 @@ export async function POST(req) {
         brandEvidence ? "brand evidence" : null,
         sellerEvidence ? "seller evidence" : null,
       ]),
-    ].join(" ");
+    ]
+      .filter(Boolean)
+      .join(" ");
 
     return Response.json({
       aiResult: {
         title: product.title,
         category,
+        categoryFit,
         market,
         pricePosition,
-        qualitySignal:
-          pricePosition === "low"
-            ? "uncertain"
-            : pricePosition === "fair"
-            ? "matched"
-            : "questionable",
 
         websiteTrust: website,
         sellerTrust: {
@@ -231,8 +285,9 @@ export async function POST(req) {
           status: overall <= 2 ? "bad" : "good",
           reason: overallReason,
         },
+
         status: overall <= 2 ? "bad" : "good",
-        
+
         integrations: {
           openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
           searchConfigured: isSearchConfigured(),
