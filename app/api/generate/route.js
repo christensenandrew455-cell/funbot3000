@@ -30,6 +30,20 @@ function clamp(n) {
   return Math.max(1, Math.min(5, Math.round(n)));
 }
 
+function getEntityScore(intel, fallback = 3) {
+  if (!intel) return fallback;
+  if (intel.positive && !intel.negative) return 4;
+  if (intel.negative && !intel.positive) return 3;
+  if (intel.positive && intel.negative) return 3;
+  return fallback;
+}
+
+function signalText(flags) {
+  const active = flags.filter(Boolean);
+  if (!active.length) return "No concrete listing details were available.";
+  return `Signals used: ${active.join(", ")}.`;
+}
+
 /* ===================== PRICE ===================== */
 
 function classifyPrice(price, market) {
@@ -150,23 +164,44 @@ export async function POST(req) {
     const brandIntel = await aiEntity(product.brand, brandEvidence);
     const sellerIntel = await aiEntity(product.seller, sellerEvidence);
 
-    const productScore = clamp(
-      brandIntel?.negative ? 2 : brandIntel?.positive ? 4 : 3
-    );
+    const productScore = clamp(getEntityScore(brandIntel));
 
-    const sellerScore = clamp(
-      sellerIntel?.negative
-        ? 2
+    const sellerBase = getEntityScore(sellerIntel, 3);
+    const sellerPriceAdjustment =
+      pricePosition === "fair"
+        ? 0.5
         : pricePosition === "low"
-        ? 3
-        : 4
-    );
+        ? -0.25
+        : pricePosition === "high"
+        ? -0.1
+        : 0;
+    const sellerScore = clamp(sellerBase + sellerPriceAdjustment);
 
     const website = websiteTrust(product.platform);
 
+    const informationCoverageBoost =
+      (product.brand ? 0.2 : 0) +
+      (product.seller ? 0.2 : 0) +
+      (price ? 0.2 : 0);
+
     const overall = clamp(
-      (productScore + sellerScore + website.score) / 3
+     productScore * 0.35 +
+        sellerScore * 0.35 +
+        website.score * 0.3 +
+        informationCoverageBoost
     );
+
+     const overallReason = [
+      `Balanced from website (${website.score}/5), seller (${sellerScore}/5), and product (${productScore}/5) trust.`,
+      `Price looked ${pricePosition === "unknown" ? "unclear" : pricePosition} versus market expectations.`,
+      signalText([
+        product.brand ? "brand" : null,
+        product.seller ? "seller" : null,
+        price ? "price" : null,
+        brandEvidence ? "brand evidence" : null,
+        sellerEvidence ? "seller evidence" : null,
+      ]),
+    ].join(" ");
 
     return Response.json({
       aiResult: {
@@ -194,12 +229,10 @@ export async function POST(req) {
         overall: {
           score: overall,
           status: overall <= 2 ? "bad" : "good",
-          reason:
-            overall <= 2
-              ? "Value or trust mismatch detected."
-              : "Price and quality appear reasonably aligned.",
+          reason: overallReason,
         },
-
+        status: overall <= 2 ? "bad" : "good",
+        
         integrations: {
           openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
           searchConfigured: isSearchConfigured(),
