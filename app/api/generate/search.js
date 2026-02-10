@@ -1,139 +1,57 @@
-import fetch from "node-fetch";
+import { OpenAI } from "openai";
+
+/* ===================== OPENAI ===================== */
+
+function getOpenAIClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  return new OpenAI({ apiKey });
+}
 
 /* ===================== CONFIG ===================== */
 
-// Brave Search API key (ENV ONLY)
-const BRAVE_API_KEY = process.env.BRAVE_SEARCH_API_KEY;
-
-// Brave free tier: 1 request / second
-const MIN_INTERVAL_MS = 1100;
-
-// Brave-safe bounds
-const MIN_COUNT = 1;
-const MAX_COUNT = 10;
-
-/* ===================== STATE ===================== */
-
-// Best-effort in-memory cache
-const cache = new Map();
-
-// Global throttle state
-let lastRequestTime = 0;
-let queue = Promise.resolve();
-
-/* ===================== HELPERS ===================== */
-
-export function isBraveConfigured() {
-  return typeof BRAVE_API_KEY === "string" && BRAVE_API_KEY.length > 20;
+export function isSearchConfigured() {
+  return Boolean(process.env.OPENAI_API_KEY);
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+/* ===================== CORE ===================== */
 
 /**
- * Ensures Brave requests are sequential
- * and never exceed 1 request / second.
+ * Performs a lightweight web search and returns
+ * RAW TEXT EVIDENCE ONLY.
+ * No reasoning. No scoring.
  */
-function enqueueBraveRequest(fn) {
-  queue = queue.then(async () => {
-    const now = Date.now();
-    const delta = now - lastRequestTime;
+async function webSearch(query) {
+  if (!query) return null;
 
-    if (delta < MIN_INTERVAL_MS) {
-      await sleep(MIN_INTERVAL_MS - delta);
-    }
+  const openai = getOpenAIClient();
+  if (!openai) return null;
 
-    lastRequestTime = Date.now();
-    return fn();
+  const res = await openai.responses.create({
+    model: "gpt-4o-mini-search-preview",
+    input: `
+Search the web for independent information.
+
+Query:
+${query}
+
+Return ONLY a concise paragraph of factual findings.
+No opinions. No conclusions.
+`,
   });
 
-  return queue;
-}
-
-/* ===================== CORE SEARCH ===================== */
-
-async function braveSearch(query, count = 7) {
-  if (!query || !isBraveConfigured()) return null;
-
-  const safeCount = Math.min(
-    MAX_COUNT,
-    Math.max(MIN_COUNT, Number(count) || 7)
-  );
-
-  const cacheKey = `${query}:${safeCount}`;
-  if (cache.has(cacheKey)) return cache.get(cacheKey);
-
-  return enqueueBraveRequest(async () => {
-    try {
-      const params = new URLSearchParams({
-        q: query,
-        count: String(safeCount),
-      });
-
-      const res = await fetch(
-        `https://api.search.brave.com/res/v1/web/search?${params.toString()}`,
-        {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-            "X-Subscription-Token": BRAVE_API_KEY,
-          },
-        }
-      );
-
-      if (!res.ok) {
-        const body = await res.text().catch(() => null);
-        console.error("[Brave] HTTP error", res.status, body);
-        return null;
-      }
-
-      const data = await res.json();
-
-      const results = (data?.web?.results || []).filter(
-        r => !r?.is_ad && r?.type !== "ad"
-      );
-
-      cache.set(cacheKey, results);
-      return results;
-    } catch (err) {
-      console.error("[Brave] Fetch failed", err);
-      return null;
-    }
-  });
-}
-
-/* ===================== EVIDENCE EXTRACTION ===================== */
-
-function extractEvidence(results) {
-  if (!Array.isArray(results) || results.length === 0) return null;
-
-  const snippets = results
-    .filter(r => typeof r?.snippet === "string" && r.snippet.length > 40)
-    .map(r => r.snippet);
-
-  return snippets.length > 0 ? snippets.join("\n") : null;
+  return res.output_text || null;
 }
 
 /* ===================== PUBLIC API ===================== */
 
-// Returns RAW TEXT ONLY (AI reasons later)
-export async function searchBrandEvidence(brandName) {
-  if (!brandName) return null;
-
-  const query = `${brandName} brand company manufacturer`;
-  const results = await braveSearch(query, 6);
-
-  return extractEvidence(results);
+export async function searchBrandEvidence(brand) {
+  if (!brand) return null;
+  return webSearch(`${brand} brand company manufacturer complaints`);
 }
 
-// Returns RAW TEXT ONLY (AI reasons later)
 export async function searchSellerEvidence({ seller, platform }) {
-  const subject = seller || (platform ? `${platform} seller` : null);
+  const subject = seller || platform;
   if (!subject) return null;
-
-  const query = `${subject} seller reviews scam complaints`;
-  const results = await braveSearch(query, 6);
-
-  return extractEvidence(results);
+  return webSearch(`${subject} seller reviews scam complaints`);
 }
