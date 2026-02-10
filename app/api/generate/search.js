@@ -2,77 +2,58 @@ import { OpenAI } from "openai";
 
 /* ===================== OPENAI ===================== */
 
-function getOpenAIClient() {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
-  return new OpenAI({ apiKey });
+function getClient() {
+  if (!process.env.OPENAI_API_KEY) return null;
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
-
-/* ===================== CONFIG ===================== */
 
 export function isSearchConfigured() {
   return Boolean(process.env.OPENAI_API_KEY);
 }
 
-/* ===================== CORE ===================== */
+/* ===================== CORE SEARCH ===================== */
 
-/**
- * Performs a lightweight web search and returns
- * RAW TEXT EVIDENCE ONLY.
- * No reasoning. No scoring.
- */
 async function webSearch(query) {
-  if (!query) return null;
+  const openai = getClient();
+  if (!openai || !query) return null;
 
-  const openai = getOpenAIClient();
-  if (!openai) return null;
+  try {
+    const res = await openai.responses.create({
+      model: "gpt-4o-mini",
+      tools: [{ type: "web_search_preview" }],
+      input: `
+Find neutral, independent information.
 
-  const modelCandidates = [
-    process.env.OPENAI_SEARCH_MODEL,
-    "gpt-4o-mini",
-    "gpt-4.1-mini",
-  ].filter(Boolean);
-
-  let lastError = null;
-
-  for (const model of modelCandidates) {
-    try {
-      const res = await openai.responses.create({
-        model,
-        tools: [{ type: "web_search_preview" }],
-        input: `
-Search the web for independent information.
+Focus on:
+- price vs quality reputation
+- general customer experience
+- seller reliability
 
 Query:
 ${query}
 
-Return ONLY a concise paragraph of factual findings.
-No opinions. No conclusions.
+Return ONE short factual paragraph.
+No conclusions. No scoring.
 `,
-      });
+    });
 
-      return res.output_text || null;
-    } catch (error) {
-      lastError = error;
-    }
+    return res.output_text || null;
+  } catch {
+    return null;
   }
-
-  if (lastError) {
-    console.error("Web search failed for all configured models:", lastError);
-  }
-
- return null;
 }
 
-/* ===================== PUBLIC API ===================== */
+/* ===================== PUBLIC ===================== */
 
 export async function searchBrandEvidence(brand) {
-  if (!brand) return null;
-  return webSearch(`${brand} brand company manufacturer complaints`);
+  return brand
+    ? webSearch(`${brand} product quality reputation pricing`)
+    : null;
 }
 
 export async function searchSellerEvidence({ seller, platform }) {
   const subject = seller || platform;
-  if (!subject) return null;
-  return webSearch(`${subject} seller reviews scam complaints`);
+  return subject
+    ? webSearch(`${subject} seller reviews customer experience`)
+    : null;
 }
