@@ -3,8 +3,8 @@ export const runtime = "nodejs";
 import { OpenAI } from "openai";
 import { extractFromHTML, simplifyTitle } from "./extract.js";
 import {
-  analyzeBrand,
-  analyzeSeller,
+  searchBrandEvidence,
+  searchSellerEvidence,
   isBraveConfigured,
 } from "./search.js";
 
@@ -161,6 +161,39 @@ Return JSON ONLY:
   return parsed;
 }
 
+/* ===== NEW: AI BRAND / SELLER INFERENCE (MINIMAL ADD) ===== */
+
+async function aiInferEntity(type, name, evidence) {
+  if (!name) return null;
+  const openai = getOpenAIClient();
+  if (!openai) return null;
+
+  const res = await openai.responses.create({
+    model: "gpt-4o-mini",
+    input: `
+Evaluate this ${type} using ONLY the evidence provided.
+
+Name:
+${name}
+
+Evidence:
+${evidence || "No independent evidence found."}
+
+Return JSON ONLY:
+{
+  "exists": boolean,
+  "signals": {
+    "complaints": boolean,
+    "marketplace": boolean
+  },
+  "summary": string
+}
+`,
+  });
+
+  return safeJSONParse(getResponseText(res), null);
+}
+
 /* ===================== WEBSITE TRUST ===================== */
 
 function scoreWebsite(platform, signals) {
@@ -207,26 +240,33 @@ export async function POST(req) {
     const simplifiedTitle = simplifyTitle(productInfo.title);
 
     const category = await aiInferCategory(simplifiedTitle);
-    const categoryFits = await aiValidateCategory(
-      simplifiedTitle,
-      category
-    );
+    const categoryFits = await aiValidateCategory(simplifiedTitle, category);
+    const market = await getMarketPriceRange(simplifiedTitle, category);
 
-    const market = await getMarketPriceRange(
-      simplifiedTitle,
-      category
-    );
+    /* ===== RAW BRAVE DATA ===== */
 
-    /* ===== BRAND / SELLER INTEL ===== */
-
-    const brandIntel = productInfo.brand
-      ? await analyzeBrand(productInfo.brand)
+    const brandEvidence = productInfo.brand
+      ? await searchBrandEvidence(productInfo.brand)
       : null;
 
-    const sellerIntel = await analyzeSeller({
+    const sellerEvidence = await searchSellerEvidence({
       seller: productInfo.seller,
       platform: productInfo.platform,
     });
+
+    /* ===== AI INTERPRETATION ===== */
+
+    const brandIntel = await aiInferEntity(
+      "brand",
+      productInfo.brand,
+      brandEvidence
+    );
+
+    const sellerIntel = await aiInferEntity(
+      "seller",
+      productInfo.seller,
+      sellerEvidence
+    );
 
     /* ===== PRICE / QUALITY ===== */
 
@@ -236,7 +276,7 @@ export async function POST(req) {
 
     const pricePosition = classifyPrice(numericPrice, market);
 
-    let qualitySignal =
+    const qualitySignal =
       pricePosition === "reasonable"
         ? "normal"
         : pricePosition === "suspiciously_low"
@@ -250,7 +290,7 @@ export async function POST(req) {
       productInfo.seller
     );
 
-    /* ===== SCORING ===== */
+    /* ===== SCORING (UNCHANGED) ===== */
 
     const productTrustScore = clampScore(
       !brandIntel?.exists
@@ -286,8 +326,6 @@ export async function POST(req) {
         4,
       2
     );
-
-    /* ===== RESULT ===== */
 
     return new Response(
       JSON.stringify({
