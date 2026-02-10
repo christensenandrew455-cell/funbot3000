@@ -44,6 +44,15 @@ function signalText(flags) {
   return `Signals used: ${active.join(", ")}.`;
 }
 
+function hasMeaningfulValue(value) {
+  if (typeof value !== "string") return Boolean(value);
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return false;
+  return !["null", "undefined", "n/a", "na", "none", "unknown"].includes(
+    normalized
+  );
+}
+
 /* ===================== PRICE ===================== */
 
 function classifyPrice(price, market) {
@@ -213,9 +222,14 @@ Platform: ${product.platform}
 Price position: ${pricePosition}
 `;
 
-    const brandIntel = await aiEntity(product.brand, brandEvidence);
-    const sellerIntel = await aiEntity(
-      product.seller || product.platform,
+    const hasBrand = hasMeaningfulValue(product.brand);
+    const hasSeller = hasMeaningfulValue(product.seller);
+
+    const brandIntel = hasBrand
+      ? await aiEntity(product.brand, brandEvidence)
+      : null;
+      const sellerIntel = await aiEntity(
+      hasSeller ? product.seller : product.platform,
       sellerEvidence,
       sellerContext
     );
@@ -276,7 +290,9 @@ Price position: ${pricePosition}
         },
         productTrust: {
           score: productScore,
-          reason: brandIntel?.summary || "Limited brand data.",
+          reason: hasBrand
+            ? brandIntel?.summary || "Limited brand data."
+            : "No verifiable brand was found on the listing.",
         },
 
         overall: {
