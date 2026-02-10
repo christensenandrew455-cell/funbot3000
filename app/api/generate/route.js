@@ -5,7 +5,7 @@ import { extractFromHTML, simplifyTitle } from "./extract.js";
 import {
   searchBrandEvidence,
   searchSellerEvidence,
-  isBraveConfigured,
+  isSearchConfigured,
 } from "./search.js";
 
 /* ===================== OPENAI ===================== */
@@ -340,7 +340,7 @@ export async function POST(req) {
 
           integrations: {
             openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
-            braveConfigured: isBraveConfigured(),
+            searchConfigured: isSearchConfigured(),
           },
 
           websiteTrust,
