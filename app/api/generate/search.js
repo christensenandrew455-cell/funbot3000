@@ -27,9 +27,20 @@ async function webSearch(query) {
   const openai = getOpenAIClient();
   if (!openai) return null;
 
-  const res = await openai.responses.create({
-    model: "gpt-4o-mini-search-preview",
-    input: `
+  const modelCandidates = [
+    process.env.OPENAI_SEARCH_MODEL,
+    "gpt-4o-mini",
+    "gpt-4.1-mini",
+  ].filter(Boolean);
+
+  let lastError = null;
+
+  for (const model of modelCandidates) {
+    try {
+      const res = await openai.responses.create({
+        model,
+        tools: [{ type: "web_search_preview" }],
+        input: `
 Search the web for independent information.
 
 Query:
@@ -38,9 +49,19 @@ ${query}
 Return ONLY a concise paragraph of factual findings.
 No opinions. No conclusions.
 `,
-  });
+      });
 
-  return res.output_text || null;
+      return res.output_text || null;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) {
+    console.error("Web search failed for all configured models:", lastError);
+  }
+
+ return null;
 }
 
 /* ===================== PUBLIC API ===================== */
