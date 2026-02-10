@@ -2,7 +2,7 @@ import fetch from "node-fetch";
 
 /* ===================== CONFIG ===================== */
 
-// Brave Search API key (ENV ONLY — do not inline)
+// Brave Search API key (ENV ONLY)
 const BRAVE_API_KEY = process.env.BRAVE_SEARCH_API_KEY;
 
 // Brave free tier: 1 request / second
@@ -14,10 +14,10 @@ const MAX_COUNT = 10;
 
 /* ===================== STATE ===================== */
 
-// Best-effort in-memory cache (serverless-safe but ephemeral)
+// Best-effort in-memory cache
 const cache = new Map();
 
-// Global throttle state (per runtime)
+// Global throttle state
 let lastRequestTime = 0;
 let queue = Promise.resolve();
 
@@ -82,13 +82,9 @@ async function braveSearch(query, count = 7) {
         }
       );
 
-      // Rate limit: return cached data if possible
-      if (res.status === 429) {
-        return cache.get(cacheKey) || null;
-      }
-
-      // Client errors: bad key, quota, malformed request
       if (!res.ok) {
+        const body = await res.text().catch(() => null);
+        console.error("[Brave] HTTP error", res.status, body);
         return null;
       }
 
@@ -100,97 +96,44 @@ async function braveSearch(query, count = 7) {
 
       cache.set(cacheKey, results);
       return results;
-    } catch {
+    } catch (err) {
+      console.error("[Brave] Fetch failed", err);
       return null;
     }
   });
 }
 
+/* ===================== EVIDENCE EXTRACTION ===================== */
+
 function extractEvidence(results) {
-  if (!results || results.length === 0) return null;
+  if (!Array.isArray(results) || results.length === 0) return null;
 
   const snippets = results
-    .filter(r => typeof r?.snippet === "string" && r.snippet.length > 50)
+    .filter(r => typeof r?.snippet === "string" && r.snippet.length > 40)
     .map(r => r.snippet);
 
   return snippets.length > 0 ? snippets.join("\n") : null;
 }
 
-/* ===================== BRAND INTELLIGENCE ===================== */
+/* ===================== PUBLIC API ===================== */
 
-export async function analyzeBrand(brandName) {
+// Returns RAW TEXT ONLY (AI reasons later)
+export async function searchBrandEvidence(brandName) {
   if (!brandName) return null;
 
   const query = `${brandName} brand company manufacturer`;
   const results = await braveSearch(query, 6);
-  const text = extractEvidence(results);
 
-  if (!text) {
-    return {
-      exists: false,
-      confidence: "low",
-      summary: "No independent information found about this brand.",
-      signals: {
-        complaints: false,
-        ecommerceBrand: false,
-      },
-      rawText: null,
-    };
-  }
-
-  const complaints = /scam|complaint|fake|ripoff/i.test(text);
-  const ecommerceBrand = /shopify|amazon brand|online store/i.test(text);
-
-  return {
-    exists: true,
-    confidence: complaints ? "low" : "medium",
-    summary: complaints
-      ? "Brand has reports of complaints or scam-related mentions."
-      : "Brand appears to exist with limited independent information.",
-    signals: {
-      complaints,
-      ecommerceBrand,
-    },
-    rawText: text,
-  };
+  return extractEvidence(results);
 }
 
-/* ===================== SELLER INTELLIGENCE ===================== */
-
-export async function analyzeSeller({ seller, platform }) {
+// Returns RAW TEXT ONLY (AI reasons later)
+export async function searchSellerEvidence({ seller, platform }) {
   const subject = seller || (platform ? `${platform} seller` : null);
   if (!subject) return null;
 
   const query = `${subject} seller reviews scam complaints`;
   const results = await braveSearch(query, 6);
-  const text = extractEvidence(results);
 
-  if (!text) {
-    return {
-      exists: false,
-      confidence: "low",
-      summary: "No independent seller information found.",
-      signals: {
-        complaints: false,
-        marketplace: false,
-      },
-      rawText: null,
-    };
-  }
-
-  const complaints = /scam|fraud|complaint|ripoff/i.test(text);
-  const marketplace = /amazon|etsy|walmart|ebay/i.test(text);
-
-  return {
-    exists: true,
-    confidence: complaints ? "low" : "medium",
-    summary: complaints
-      ? "Seller has complaint or scam-related mentions."
-      : "Seller appears to operate normally based on available information.",
-    signals: {
-      complaints,
-      marketplace,
-    },
-    rawText: text,
-  };
+  return extractEvidence(results);
 }
