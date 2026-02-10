@@ -6,12 +6,35 @@ import * as cheerio from "cheerio";
 export function normalizeBrand(raw) {
   if (!raw) return null;
 
-  return raw
+  const normalized = raw
     .replace(/^(brand[:\s]+|visit the\s+|by\s+)/i, "")
     .replace(/\s+store$/i, "")
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+
+  if (
+    !normalized ||
+    ["null", "undefined", "n/a", "na", "none", "unknown"].includes(
+      normalized
+    )
+  ) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function normalizeEntity(value) {
+  if (!value) return null;
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return null;
+
+  if (/^(null|undefined|n\/?a|none|unknown)$/i.test(normalized)) {
+    return null;
+  }
+
+  return normalized;
 }
 
 /* ===================== JSON-LD HELPERS ===================== */
@@ -148,8 +171,7 @@ export async function extractFromHTML(url) {
     const amazonSeller =
       $("#merchant-info").text()?.trim() || null;
 
-    seller = seller || amazonSeller;
-    if (seller) seller = seller.replace(/\s+/g, " ").trim();
+   seller = normalizeEntity(seller || amazonSeller);
 
     /* ===== BRAND ===== */
 
