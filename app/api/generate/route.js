@@ -143,9 +143,6 @@ Evaluate product suitability.
 Product: ${product}
 Category: ${category}
 
-Is this product commonly appropriate,
-useful, and expected for this category?
-
 Return JSON only:
 {
   "appropriate": boolean,
@@ -167,11 +164,6 @@ async function aiWebsiteTrust(platform) {
 Evaluate website trustworthiness.
 
 Domain: ${platform}
-
-Consider:
-- general reputation
-- marketplace vs independent store
-- consumer risk patterns
 
 Return JSON only:
 {
@@ -233,22 +225,29 @@ Price position: ${pricePosition}
     const productScore = clamp(getEntityScore(brandIntel));
     const sellerScore = clamp(getEntityScore(sellerIntel));
 
+    /* ===================== KEY FIX ===================== */
+    // Website only penalizes if BAD — never boosts
+    const websitePenalty =
+      website.score <= 2 ? -0.75 : 0;
+
     const informationCoverageBoost =
       (product.brand ? 0.2 : 0) +
       (product.seller ? 0.2 : 0) +
       (price ? 0.2 : 0);
 
     const overall = clamp(
-      productScore * 0.35 +
-        sellerScore * 0.35 +
-        website.score * 0.3 +
+      productScore * 0.5 +
+        sellerScore * 0.5 +
+        websitePenalty +
         informationCoverageBoost
     );
 
     const overallReason = [
-      `Website trust: ${website.score}/5.`,
       `Seller trust: ${sellerScore}/5.`,
       `Product/brand trust: ${productScore}/5.`,
+      website.score <= 2
+        ? `Website risk detected: ${website.reason}`
+        : null,
       `Price appears ${pricePosition} relative to market.`,
       categoryFit?.summary || null,
       signalText([
