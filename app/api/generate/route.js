@@ -1,5 +1,5 @@
 import { OpenAI } from "openai";
-
+import { extractFromHTML } from "./extract";
 /* ===================== OPENAI ===================== */
 
 function getClient() {
@@ -202,4 +202,190 @@ Return JSON only:
   );
 
   return safeJSON(text)?.match ?? null;
+}
+
+function clampScore(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(5, Math.round(numeric)));
+}
+
+function parsePrice(value) {
+  if (typeof value === "number") return value;
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(/[^0-9.]/g, "");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildAiResult(extracted, analyses) {
+  const {
+    sellerData,
+    productData,
+    brandPriceData,
+    productPriceData,
+    productProblems,
+    brandSellerMatch,
+  } = analyses;
+
+  let websiteScore = 3;
+  const websiteReasons = [];
+
+  if (extracted.platform?.includes("amazon")) {
+    websiteScore += 1;
+    websiteReasons.push("Marketplace is a known mainstream platform.");
+  } else if (extracted.platform) {
+    websiteReasons.push(`Platform detected as ${extracted.platform}.`);
+  }
+
+  let sellerScore = 3;
+  const sellerReasons = [];
+
+  if (sellerData?.positive) {
+    sellerScore += 1;
+    sellerReasons.push("Independent sources show positive seller signals.");
+  }
+
+  if (sellerData?.negative) {
+    sellerScore -= 2;
+    sellerReasons.push("Independent sources show seller complaints or warnings.");
+  }
+
+  if (brandSellerMatch === true) {
+    sellerScore += 1;
+    sellerReasons.push("Seller appears to match the brand storefront.");
+  } else if (brandSellerMatch === false) {
+    sellerScore -= 1;
+    sellerReasons.push("Seller does not clearly match the brand storefront.");
+  }
+
+  if (sellerData?.summary) {
+    sellerReasons.push(sellerData.summary);
+  }
+
+  let productScore = 3;
+  const productReasons = [];
+
+  if (productData?.positive) {
+    productScore += 1;
+    productReasons.push("Product reputation appears positive.");
+  }
+
+  if (productData?.negative) {
+    productScore -= 1;
+    productReasons.push("Product has negative reputation indicators.");
+  }
+
+  if (Array.isArray(productProblems?.issues) && productProblems.issues.length > 0) {
+    productScore -= 1;
+    productReasons.push(`Common issues: ${productProblems.issues.slice(0, 2).join(", ")}.`);
+  }
+
+  if (productData?.summary) {
+    productReasons.push(productData.summary);
+  }
+
+  const listingPrice = parsePrice(extracted.price);
+  const referenceAverage =
+    brandPriceData?.average ?? productPriceData?.average ?? null;
+
+  if (listingPrice && referenceAverage) {
+    if (listingPrice > referenceAverage * 1.5) {
+      productScore -= 1;
+      productReasons.push("Listing price appears much higher than common market pricing.");
+    } else if (listingPrice < referenceAverage * 0.6) {
+      productScore -= 1;
+      productReasons.push("Listing price appears unusually low compared with market pricing.");
+    }
+  }
+
+  const websiteTrust = {
+    score: clampScore(websiteScore),
+    reason:
+      websiteReasons.join(" ") ||
+      "Insufficient website risk signals were available.",
+  };
+
+  const sellerTrust = {
+    score: clampScore(sellerScore),
+    reason:
+      sellerReasons.join(" ") ||
+      "Insufficient seller data was available.",
+  };
+
+  const productTrust = {
+    score: clampScore(productScore),
+    reason:
+      productReasons.join(" ") ||
+      "Insufficient product data was available.",
+  };
+
+  const overallScore = clampScore(
+    (websiteTrust.score + sellerTrust.score + productTrust.score) / 3
+  );
+
+  const status = overallScore >= 3 ? "good" : "bad";
+
+  return {
+    status,
+    title: extracted.product || "Unknown Product",
+    websiteTrust,
+    sellerTrust,
+    productTrust,
+    overall: {
+      score: overallScore,
+      reason:
+        status === "good"
+          ? "Signals look mostly consistent with a legitimate listing."
+          : "Multiple trust signals indicate elevated purchase risk.",
+    },
+  };
+}
+
+export async function POST(request) {
+  try {
+    const { url } = await request.json();
+
+    if (!url || typeof url !== "string") {
+      return Response.json({ error: "A valid URL is required." }, { status: 400 });
+    }
+
+    const extracted = await extractFromHTML(url);
+
+    if (!extracted) {
+      return Response.json(
+        {
+          error:
+            "Could not extract enough product information from this page.",
+        },
+        { status: 422 }
+      );
+    }
+
+    const [sellerData, productData, brandPriceData, productPriceData, productProblems, brandSellerMatch] =
+      await Promise.all([
+        getSellerData(extracted.seller),
+        getProductData(extracted.brand, extracted.product),
+        getBrandPriceData(extracted.brand, extracted.product),
+        getProductPriceData(extracted.product),
+        getProductProblems(extracted.product),
+        getBrandSellerMatch(extracted.brand, extracted.seller),
+      ]);
+
+    const aiResult = buildAiResult(extracted, {
+      sellerData,
+      productData,
+      brandPriceData,
+      productPriceData,
+      productProblems,
+      brandSellerMatch,
+    });
+
+    return Response.json({
+      aiResult,
+      extracted,
+    });
+  } catch {
+    return Response.json({ error: "Request failed." }, { status: 500 });
+  }
 }
