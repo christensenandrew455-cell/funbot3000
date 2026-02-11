@@ -31,14 +31,12 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
-  const [screenshot, setScreenshot] = useState(null);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
     setResult(null);
-    setScreenshot(null);
-
+    
     const normalizedUrl = normalizeUrl(url);
     if (!normalizedUrl) {
       setError("Please enter a valid product link.");
@@ -56,7 +54,6 @@ export default function Home() {
       if (!res.ok) throw new Error("Request failed");
       const data = await res.json();
 
-      setScreenshot(data.base64 || null);
       setResult(data.aiResult || null);
     } catch (err) {
       console.error(err);
@@ -69,7 +66,7 @@ export default function Home() {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        {!result && !screenshot && (
+        {!result && (
           <div style={styles.instructions}>
             <h1 style={styles.heroTitle}>
               Found a product that doesn’t look right?
@@ -112,21 +109,6 @@ export default function Home() {
         )}
 
         {error && <p style={styles.error}>{error}</p>}
-
-        {screenshot && (
-          <div style={{ margin: "24px 0", textAlign: "center" }}>
-            <h4>Product Screenshot:</h4>
-            <img
-              src={`data:image/png;base64,${screenshot}`}
-              alt="Product screenshot"
-              style={{
-                maxWidth: "100%",
-                borderRadius: 12,
-                boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-              }}
-            />
-          </div>
-        )}
 
         {result && (
           <>
