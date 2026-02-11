@@ -2,6 +2,20 @@
 
 import { useState } from "react";
 
+const OVERALL_LABELS = {
+  scam: "SCAM",
+  untrustworthy: "UNTRUSTWORTHY",
+  overpriced: "OVERPRICED",
+  "good product": "GOOD PRODUCT",
+};
+
+const OVERALL_COLORS = {
+  scam: "#dc2626",
+  untrustworthy: "#ea580c",
+  overpriced: "#d97706",
+  "good product": "#16a34a",
+};
+
 function normalizeUrl(input) {
   if (!input) return "";
   if (/^https?:\/\//i.test(input)) return input;
@@ -131,7 +145,7 @@ export default function Home() {
         {result && (
           <>
             <div style={styles.verdict(result.status)}>
-              {result.status === "good" ? "GOOD PRODUCT" : "POTENTIAL SCAM"}
+              {OVERALL_LABELS[result.status] || "UNRATED"}
             </div>
 
             <div style={styles.section}>
@@ -165,6 +179,7 @@ export default function Home() {
             >
               <h3>Overall Rating</h3>
               <Stars score={result.overall?.score} />
+              <p><strong>{result.overall?.meaning}</strong></p>
               <p>{result.overall?.reason}</p>
             </div>
           </>
@@ -201,6 +216,6 @@ const styles = {
   factsTitle: { fontSize: 26, fontWeight: 700, marginBottom: 24, textAlign: "center" },
   factsList: { listStyle: "disc", paddingLeft: 24, fontSize: 16, color: "#333", lineHeight: 2 },
   error: { color: "red", marginTop: 12, textAlign: "center" },
-  verdict: (status) => ({ fontSize: 28, fontWeight: 900, color: status === "good" ? "#16a34a" : "#dc2626", textAlign: "center", marginBottom: 24 }),
+  verdict: (status) => ({ fontSize: 28, fontWeight: 900, color: OVERALL_COLORS[status] || "#111", textAlign: "center", marginBottom: 24 }),
   section: { marginBottom: 18 },
 };
