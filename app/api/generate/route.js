@@ -1,5 +1,14 @@
 import { OpenAI } from "openai";
 import { extractFromHTML } from "./extract";
+import {
+  getSellerData,
+  getProductData,
+  getBrandPriceData,
+  getProductPriceData,
+  getProductProblemsData,
+  getBrandSellerMatch,
+} from "./search";
+
 /* ===================== OPENAI ===================== */
 
 function getClient() {
@@ -13,14 +22,13 @@ export function isSearchConfigured() {
 
 /* ===================== CORE HELPERS ===================== */
 
-async function gptSearch(prompt, useWeb = false) {
+async function gptKnowledge(prompt) {
   const openai = getClient();
   if (!openai) return null;
 
   try {
     const res = await openai.responses.create({
-      model: "gpt-4o-mini",
-      tools: useWeb ? [{ type: "web_search_preview" }] : undefined,
+      model: "gpt-4.1-nano",
       input: prompt,
     });
 
@@ -31,177 +39,14 @@ async function gptSearch(prompt, useWeb = false) {
 }
 
 function safeJSON(text, fallback = null) {
+    if (!text || typeof text !== "string") return fallback;
+  
   try {
     const m = text.match(/\{[\s\S]*\}/);
     return m ? JSON.parse(m[0]) : fallback;
   } catch {
     return fallback;
   }
-}
-
-/* ===================== SELLER DATA ===================== */
-/* Uses GPT + web search */
-
-export async function getSellerData(seller) {
-  if (!seller) return null;
-
-  const text = await gptSearch(
-    `
-Find neutral, independent seller information.
-
-Seller:
-${seller}
-
-Focus on:
-- legitimacy
-- customer experience
-- fulfillment / refunds
-- common complaints
-
-Return JSON only:
-{
-  "exists": boolean,
-  "positive": boolean,
-  "negative": boolean,
-  "summary": string
-}
-`,
-    true
-  );
-
-  return safeJSON(text);
-}
-
-/* ===================== PRODUCT DATA ===================== */
-/* Brand + product via GPT + web search */
-
-export async function getProductData(brand, product) {
-  if (!product) return null;
-
-  const query = brand ? `${brand} ${product}` : product;
-
-  const text = await gptSearch(
-    `
-Find neutral product information.
-
-Product:
-${query}
-
-Focus on:
-- build quality
-- performance vs expectations
-- general reputation
-
-Return JSON only:
-{
-  "positive": boolean,
-  "negative": boolean,
-  "summary": string
-}
-`,
-    true
-  );
-
-  return safeJSON(text);
-}
-
-/* ===================== BRAND PRICE DATA ===================== */
-/* GPT + web search */
-
-export async function getBrandPriceData(brand, product) {
-  if (!product) return null;
-
-  const query = brand ? `${brand} ${product}` : product;
-
-  const text = await gptSearch(
-    `
-Estimate average online pricing.
-
-Product:
-${query}
-
-Return JSON only:
-{
-  "min": number,
-  "max": number,
-  "average": number
-}
-`,
-    true
-  );
-
-  return safeJSON(text);
-}
-
-/* ===================== PRODUCT PRICE DATA ===================== */
-/* GPT general knowledge ONLY (no search) */
-
-export async function getProductPriceData(product) {
-  if (!product) return null;
-
-  const text = await gptSearch(
-    `
-Using general knowledge only, estimate typical pricing.
-
-Product:
-${product}
-
-Return JSON only:
-{
-  "min": number,
-  "max": number,
-  "average": number
-}
-`
-  );
-
-  return safeJSON(text);
-}
-
-/* ===================== PRODUCT PROBLEMS ===================== */
-/* GPT general knowledge ONLY */
-
-export async function getProductProblems(product) {
-  if (!product) return null;
-
-  const text = await gptSearch(
-    `
-List common consumer issues.
-
-Product:
-${product}
-
-Return JSON only:
-{
-  "issues": string[]
-}
-`
-  );
-
-  return safeJSON(text);
-}
-
-/* ===================== BRAND = SELLER MATCH ===================== */
-/* GPT logic only */
-
-export async function getBrandSellerMatch(brand, seller) {
-  if (!brand || !seller) return null;
-
-  const text = await gptSearch(
-    `
-Determine whether the seller is the brand itself or an authorized brand storefront.
-
-Brand: ${brand}
-Seller: ${seller}
-
-Return JSON only:
-{
-  "match": boolean
-}
-`
-  );
-
-  return safeJSON(text)?.match ?? null;
 }
 
 function clampScore(value) {
@@ -218,108 +63,122 @@ function parsePrice(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function buildAiResult(extracted, analyses) {
+async function evaluateTrust({ area, scoreHint, facts, fallbackReason }) {
+  const text = await gptKnowledge(`
+You are evaluating trust for an ecommerce listing.
+
+Area: ${area}
+Suggested score from signals (0 to 5): ${scoreHint}
+
+Facts:
+${facts}
+
+Return JSON only:
+{
+  "score": number,
+  "reason": "Exactly two short sentences based only on the facts."
+}
+`);
+
+  const parsed = safeJSON(text, null);
+
+  return {
+    score: clampScore(parsed?.score ?? scoreHint),
+    reason: parsed?.reason || fallbackReason,
+  };
+}
+
+async function buildAiResult(extracted, analyses) {
   const {
     sellerData,
     productData,
     brandPriceData,
     productPriceData,
-    productProblems,
+    productProblemsData,
     brandSellerMatch,
   } = analyses;
 
   let websiteScore = 3;
-  const websiteReasons = [];
+  const websiteFacts = [];
 
   if (extracted.platform?.includes("amazon")) {
     websiteScore += 1;
-    websiteReasons.push("Marketplace is a known mainstream platform.");
+    websiteFacts.push("Marketplace is a known mainstream platform.");
   } else if (extracted.platform) {
-    websiteReasons.push(`Platform detected as ${extracted.platform}.`);
+    websiteFacts.push(`Platform detected as ${extracted.platform}.`);
   }
 
   let sellerScore = 3;
-  const sellerReasons = [];
+  const sellerFacts = [];
 
-  if (sellerData?.positive) {
+  if (brandSellerMatch === "yes") {
     sellerScore += 1;
-    sellerReasons.push("Independent sources show positive seller signals.");
-  }
-
-  if (sellerData?.negative) {
-    sellerScore -= 2;
-    sellerReasons.push("Independent sources show seller complaints or warnings.");
-  }
-
-  if (brandSellerMatch === true) {
-    sellerScore += 1;
-    sellerReasons.push("Seller appears to match the brand storefront.");
-  } else if (brandSellerMatch === false) {
+    sellerFacts.push("Seller appears to match the brand storefront.");
+  } else if (brandSellerMatch === "no") {
     sellerScore -= 1;
-    sellerReasons.push("Seller does not clearly match the brand storefront.");
+    sellerFacts.push("Seller does not clearly match the brand storefront.");
   }
 
-  if (sellerData?.summary) {
-    sellerReasons.push(sellerData.summary);
+  if (sellerData) {
+    sellerFacts.push(sellerData);
   }
 
   let productScore = 3;
-  const productReasons = [];
+  const productFacts = [];
 
-  if (productData?.positive) {
-    productScore += 1;
-    productReasons.push("Product reputation appears positive.");
+  if (productData) {
+    productFacts.push(productData);
   }
 
-  if (productData?.negative) {
-    productScore -= 1;
-    productReasons.push("Product has negative reputation indicators.");
-  }
-
-  if (Array.isArray(productProblems?.issues) && productProblems.issues.length > 0) {
-    productScore -= 1;
-    productReasons.push(`Common issues: ${productProblems.issues.slice(0, 2).join(", ")}.`);
-  }
-
-  if (productData?.summary) {
-    productReasons.push(productData.summary);
+  if (productProblemsData) {
+    productFacts.push(productProblemsData);
+    if (!productProblemsData.toLowerCase().includes("no common")) {
+      productScore -= 1;
+    }
   }
 
   const listingPrice = parsePrice(extracted.price);
   const referenceAverage =
-    brandPriceData?.average ?? productPriceData?.average ?? null;
+    brandPriceData?.match(/\d+[\d,.]*/)?.[0] ??
+    productPriceData?.match(/\d+[\d,.]*/)?.[0] ??
+    null;
 
-  if (listingPrice && referenceAverage) {
-    if (listingPrice > referenceAverage * 1.5) {
+  const referenceAverageNumber = parsePrice(referenceAverage);
+
+  if (listingPrice && referenceAverageNumber) {
+    if (listingPrice > referenceAverageNumber * 1.5) {
       productScore -= 1;
-      productReasons.push("Listing price appears much higher than common market pricing.");
-    } else if (listingPrice < referenceAverage * 0.6) {
+      productFacts.push("Listing price appears much higher than common market pricing.");
+    } else if (listingPrice < referenceAverageNumber * 0.6) {
       productScore -= 1;
-      productReasons.push("Listing price appears unusually low compared with market pricing.");
+      productFacts.push("Listing price appears unusually low compared with market pricing.");
     }
   }
 
-  const websiteTrust = {
-    score: clampScore(websiteScore),
-    reason:
-      websiteReasons.join(" ") ||
-      "Insufficient website risk signals were available.",
-  };
-
-  const sellerTrust = {
-    score: clampScore(sellerScore),
-    reason:
-      sellerReasons.join(" ") ||
-      "Insufficient seller data was available.",
-  };
-
-  const productTrust = {
-    score: clampScore(productScore),
-    reason:
-      productReasons.join(" ") ||
-      "Insufficient product data was available.",
-  };
-
+  const [websiteTrust, sellerTrust, productTrust] = await Promise.all([
+    evaluateTrust({
+      area: "Website Trust",
+      scoreHint: websiteScore,
+      facts: websiteFacts.join("\n") || "No strong website facts were detected.",
+      fallbackReason:
+        "The website shows limited risk signals. More direct verification is still recommended.",
+    }),
+    evaluateTrust({
+      area: "Seller Trust",
+      scoreHint: sellerScore,
+      facts: sellerFacts.join("\n") || "No strong seller facts were detected.",
+      fallbackReason:
+        "Seller details are limited from the available evidence. Verify return policy and seller history before purchase.",
+    }),
+    evaluateTrust({
+      area: "Product Trust",
+      scoreHint: productScore,
+      facts: productFacts.join("\n") || "No strong product facts were detected.",
+      fallbackReason:
+        "Product evidence is limited from the available facts. Compare price and quality signals with trusted listings.",
+    }),
+  ]);
+  
   const overallScore = clampScore(
     (websiteTrust.score + sellerTrust.score + productTrust.score) / 3
   );
@@ -336,8 +195,8 @@ function buildAiResult(extracted, analyses) {
       score: overallScore,
       reason:
         status === "good"
-          ? "Signals look mostly consistent with a legitimate listing."
-          : "Multiple trust signals indicate elevated purchase risk.",
+          ? "Signals look mostly consistent with a legitimate listing. Keep normal purchase safeguards in place."
+          : "Multiple trust signals indicate elevated purchase risk. Verify seller, pricing, and return protections before buying.",
     },
   };
 }
@@ -362,22 +221,28 @@ export async function POST(request) {
       );
     }
 
-    const [sellerData, productData, brandPriceData, productPriceData, productProblems, brandSellerMatch] =
-      await Promise.all([
-        getSellerData(extracted.seller),
-        getProductData(extracted.brand, extracted.product),
-        getBrandPriceData(extracted.brand, extracted.product),
-        getProductPriceData(extracted.product),
-        getProductProblems(extracted.product),
-        getBrandSellerMatch(extracted.brand, extracted.seller),
-      ]);
-
-    const aiResult = buildAiResult(extracted, {
+    const [
       sellerData,
       productData,
       brandPriceData,
       productPriceData,
-      productProblems,
+      productProblemsData,
+      brandSellerMatch,
+    ] = await Promise.all([
+      getSellerData(extracted.seller),
+      getProductData({ brand: extracted.brand, product: extracted.product }),
+      getBrandPriceData({ brand: extracted.brand, product: extracted.product }),
+      getProductPriceData(extracted.product),
+      getProductProblemsData(extracted.product),
+      getBrandSellerMatch({ brand: extracted.brand, seller: extracted.seller }),
+    ]);
+
+    const aiResult = await buildAiResult(extracted, {
+      sellerData,
+      productData,
+      brandPriceData,
+      productPriceData,
+      productProblemsData,
       brandSellerMatch,
     });
 
