@@ -7,6 +7,7 @@ import {
   getProductPriceData,
   getProductProblemsData,
   getBrandSellerMatch,
+  simplifyProductTitle,
 } from "./search";
 
 /* ===================== OPENAI ===================== */
@@ -246,6 +247,15 @@ export async function POST(request) {
         },
         { status: 422 }
       );
+    }
+
+    const simplifiedProduct = await simplifyProductTitle({
+      brand: extracted.brand,
+      product: extracted.product,
+    });
+
+    if (simplifiedProduct) {
+      extracted.product = simplifiedProduct;
     }
 
     const [
