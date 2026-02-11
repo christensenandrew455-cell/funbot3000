@@ -75,21 +75,6 @@ function getJsonLdString(value) {
   return null;
 }
 
-/* ===================== TITLE CLEAN ===================== */
-
-export function simplifyTitle(title) {
-  if (!title) return null;
-
-  return title
-    .toLowerCase()
-    .replace(/amazon\.com/gi, "")
-    .replace(/\|.*$/g, "")
-    .replace(/\(.*?\)/g, "")
-    .replace(/\b\d+[-\w]*\b/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 /* ===================== HTML EXTRACT ===================== */
 
 export async function extractFromHTML(url) {
@@ -106,7 +91,6 @@ export async function extractFromHTML(url) {
 
     const html = await res.text();
 
-    // HARD BLOCK DETECTION (Amazon captcha / soft block)
     if (
       html.length < 5000 ||
       /captcha|robot check|automated access/i.test(html)
@@ -117,85 +101,50 @@ export async function extractFromHTML(url) {
     const $ = cheerio.load(html);
     const productJsonLd = findJsonLdProduct($);
 
-    /* ===== TITLE → PRODUCT ===== */
-
-    const jsonTitle =
+    const rawTitle =
       getJsonLdString(productJsonLd?.name) ||
       $('meta[property="og:title"]').attr("content") ||
+      $("#productTitle").text()?.trim() ||
       $("title").first().text() ||
       null;
 
-    const amazonTitle = $("#productTitle").text()?.trim() || null;
-
-    const rawTitle = jsonTitle || amazonTitle;
     if (!rawTitle) return null;
 
-    const product = simplifyTitle(rawTitle);
-    if (!product) return null;
-
-    /* ===== OFFERS / PRICE ===== */
-
-    const jsonOffers = productJsonLd?.offers;
-    const offers = Array.isArray(jsonOffers)
-      ? jsonOffers
-      : jsonOffers
-      ? [jsonOffers]
-      : [];
-
-    const primaryOffer = offers[0] || null;
-
     let price =
-      primaryOffer?.price ||
-      primaryOffer?.priceSpecification?.price ||
+      productJsonLd?.offers?.price ||
       $('meta[property="product:price:amount"]').attr("content") ||
-      $('[itemprop="price"]').attr("content") ||
+      $(".a-price .a-offscreen").first().text() ||
       null;
-
-    const amazonPrice =
-      $(".a-price .a-offscreen").first().text() || null;
-
-    price = price || amazonPrice;
 
     if (price) {
-      const match = price.match(/\$?\d+(\.\d{2})?/);
-      price = match ? match[0] : null;
+      const m = price.match(/\$?\d+(\.\d{2})?/);
+      price = m ? m[0] : null;
     }
 
-    /* ===== SELLER ===== */
-
     let seller =
-      getJsonLdString(primaryOffer?.seller) ||
+      getJsonLdString(productJsonLd?.offers?.seller) ||
+      $("#merchant-info").text() ||
       $("#sellerProfileTriggerId").text() ||
-      $("#bylineInfo").text() ||
       null;
 
-    const amazonSeller =
-      $("#merchant-info").text()?.trim() || null;
-
-    seller = normalizeEntity(seller || amazonSeller);
-
-    /* ===== BRAND ===== */
+    seller = normalizeEntity(seller);
 
     let brand =
       getJsonLdString(productJsonLd?.brand) ||
       $('[itemprop="brand"]').text() ||
-      $('#productOverview_feature_div tr:contains("Brand") td').text() ||
       null;
 
     brand = normalizeBrand(brand);
 
-    /* ===== FINAL OBJECT ===== */
-
     return {
-      product,
+      rawTitle,
       price,
       seller,
       brand,
       platform: new URL(url).hostname.replace("www.", ""),
       source: "html",
     };
-  } catch (err) {
-    console.error("extractFromHTML error:", err);
+  } catch {
     return null;
   }
 }
