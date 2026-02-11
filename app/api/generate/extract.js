@@ -137,6 +137,7 @@ export async function extractFromHTML(url) {
     brand = normalizeBrand(brand);
 
     return {
+      product: rawTitle,
       rawTitle,
       price,
       seller,
