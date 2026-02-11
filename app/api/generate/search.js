@@ -48,6 +48,39 @@ async function gptKnowledge(prompt) {
 
 /* ===================== PUBLIC ===================== */
 
+
+/**
+ * Brand + Product -> simplifiedProductTitle
+ */
+export async function simplifyProductTitle({ brand, product }) {
+  if (!product) return null;
+
+  const result = await gptKnowledge(`
+Simplify this ecommerce product title into a clean, searchable product name.
+
+Brand:
+${brand || "Unknown"}
+
+Original title:
+${product}
+
+Rules:
+- Keep only the core product identity.
+- Remove promo words, shipping/sale phrases, emoji, and filler.
+- Keep important model/version terms when present.
+- Return ONE short line only.
+`);
+
+  if (!result) return null;
+
+  const simplified = result
+    .split("\n")[0]
+    .replace(/^[-*\d.)\s]+/, "")
+    .trim();
+
+  return simplified || null;
+}
+
 /**
  * Seller → sellerData
  */
