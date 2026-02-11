@@ -249,9 +249,13 @@ export async function POST(request) {
       );
     }
 
+        if (!extracted.product && extracted.rawTitle) {
+      extracted.product = extracted.rawTitle;
+    }
+
     const simplifiedProduct = await simplifyProductTitle({
       brand: extracted.brand,
-      product: extracted.product,
+      product: extracted.product || extracted.rawTitle,
     });
 
     if (simplifiedProduct) {
