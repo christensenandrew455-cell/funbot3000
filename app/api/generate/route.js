@@ -1,12 +1,4 @@
-export const runtime = "nodejs";
-
 import { OpenAI } from "openai";
-import { extractFromHTML, simplifyTitle } from "./extract.js";
-import {
-  searchBrandEvidence,
-  searchSellerEvidence,
-  isSearchConfigured,
-} from "./search.js";
 
 /* ===================== OPENAI ===================== */
 
@@ -15,7 +7,28 @@ function getClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
-/* ===================== HELPERS ===================== */
+export function isSearchConfigured() {
+  return Boolean(process.env.OPENAI_API_KEY);
+}
+
+/* ===================== CORE HELPERS ===================== */
+
+async function gptSearch(prompt, useWeb = false) {
+  const openai = getClient();
+  if (!openai) return null;
+
+  try {
+    const res = await openai.responses.create({
+      model: "gpt-4o-mini",
+      tools: useWeb ? [{ type: "web_search_preview" }] : undefined,
+      input: prompt,
+    });
+
+    return res.output_text || null;
+  } catch {
+    return null;
+  }
+}
 
 function safeJSON(text, fallback = null) {
   try {
@@ -26,106 +39,24 @@ function safeJSON(text, fallback = null) {
   }
 }
 
-function clamp(n) {
-  return Math.max(1, Math.min(5, Math.round(n)));
-}
+/* ===================== SELLER DATA ===================== */
+/* Uses GPT + web search */
 
-function getEntityScore(intel, fallback = 3) {
-  if (!intel) return fallback;
-  if (intel.positive && !intel.negative) return 4;
-  if (intel.negative && !intel.positive) return 2;
-  if (intel.positive && intel.negative) return 3;
-  return fallback;
-}
+export async function getSellerData(seller) {
+  if (!seller) return null;
 
-function signalText(flags) {
-  const active = flags.filter(Boolean);
-  if (!active.length) return "No concrete listing details were available.";
-  return `Signals used: ${active.join(", ")}.`;
-}
+  const text = await gptSearch(
+    `
+Find neutral, independent seller information.
 
-function hasMeaningfulValue(value) {
-  if (typeof value !== "string") return Boolean(value);
-  const normalized = value.trim().toLowerCase();
-  if (!normalized) return false;
-  return !["null", "undefined", "n/a", "na", "none", "unknown"].includes(
-    normalized
-  );
-}
+Seller:
+${seller}
 
-/* ===================== PRICE ===================== */
-
-function classifyPrice(price, market) {
-  if (!price || !market) return "unknown";
-  if (price < market.median * 0.75) return "low";
-  if (price > market.median * 1.35) return "high";
-  return "fair";
-}
-
-/* ===================== AI ===================== */
-
-async function aiCategory(name) {
-  const openai = getClient();
-  if (!openai) return null;
-
-  const r = await openai.responses.create({
-    model: "gpt-4o-mini",
-    input: `
-Infer a retail category.
-
-Product:
-${name}
-
-Return JSON only:
-{ "category": string }
-`,
-  });
-
-  return safeJSON(r.output_text)?.category || null;
-}
-
-async function aiMarketPrice(name, category) {
-  const openai = getClient();
-  if (!openai) return null;
-
-  const r = await openai.responses.create({
-    model: "gpt-5-nano",
-    input: `
-Estimate typical online pricing.
-
-Product: ${name}
-Category: ${category}
-
-Return JSON only:
-{ "min": number, "max": number, "median": number }
-`,
-  });
-
-  return safeJSON(r.output_text);
-}
-
-async function aiEntity(name, evidence, context = "") {
-  const openai = getClient();
-  if (!openai) return null;
-
-  const r = await openai.responses.create({
-    model: "gpt-4o-mini",
-    input: `
-Evaluate this entity using reasoning.
-
-Entity name: ${name}
-
-Context:
-${context || "None"}
-
-Evidence:
-${evidence || "None"}
-
-Consider:
-- legitimacy and reputation
-- alignment with brand / platform if applicable
-- consistency (e.g. brand vs seller mismatch)
-- common consumer risk patterns
+Focus on:
+- legitimacy
+- customer experience
+- fulfillment / refunds
+- common complaints
 
 Return JSON only:
 {
@@ -135,182 +66,140 @@ Return JSON only:
   "summary": string
 }
 `,
-  });
+    true
+  );
 
-  return safeJSON(r.output_text);
+  return safeJSON(text);
 }
 
-async function aiCategoryFit(product, category) {
-  const openai = getClient();
-  if (!openai) return null;
+/* ===================== PRODUCT DATA ===================== */
+/* Brand + product via GPT + web search */
 
-  const r = await openai.responses.create({
-    model: "gpt-4o-mini",
-    input: `
-Evaluate product suitability.
+export async function getProductData(brand, product) {
+  if (!product) return null;
 
-Product: ${product}
-Category: ${category}
+  const query = brand ? `${brand} ${product}` : product;
+
+  const text = await gptSearch(
+    `
+Find neutral product information.
+
+Product:
+${query}
+
+Focus on:
+- build quality
+- performance vs expectations
+- general reputation
 
 Return JSON only:
 {
-  "appropriate": boolean,
+  "positive": boolean,
+  "negative": boolean,
   "summary": string
 }
 `,
-  });
+    true
+  );
 
-  return safeJSON(r.output_text);
+  return safeJSON(text);
 }
 
-async function aiWebsiteTrust(platform) {
-  const openai = getClient();
-  if (!openai) return { score: 3, reason: "Unknown platform." };
+/* ===================== BRAND PRICE DATA ===================== */
+/* GPT + web search */
 
-  const r = await openai.responses.create({
-    model: "gpt-4o-mini",
-    input: `
-Evaluate website trustworthiness.
+export async function getBrandPriceData(brand, product) {
+  if (!product) return null;
 
-Domain: ${platform}
+  const query = brand ? `${brand} ${product}` : product;
+
+  const text = await gptSearch(
+    `
+Estimate average online pricing.
+
+Product:
+${query}
 
 Return JSON only:
 {
-  "score": number,
-  "reason": string
+  "min": number,
+  "max": number,
+  "average": number
 }
 `,
-  });
+    true
+  );
 
-  return safeJSON(r.output_text) || { score: 3, reason: "Unknown platform." };
+  return safeJSON(text);
 }
 
-/* ===================== ROUTE ===================== */
+/* ===================== PRODUCT PRICE DATA ===================== */
+/* GPT general knowledge ONLY (no search) */
 
-export async function POST(req) {
-  try {
-    const { url } = await req.json();
-    if (!url) return Response.json({ error: "Missing URL" }, { status: 400 });
+export async function getProductPriceData(product) {
+  if (!product) return null;
 
-    const product = await extractFromHTML(url);
-    if (!product?.title)
-      return Response.json({ error: "Extraction failed" }, { status: 400 });
+  const text = await gptSearch(
+    `
+Using general knowledge only, estimate typical pricing.
 
-    const title = simplifyTitle(product.title);
+Product:
+${product}
 
-    const category = await aiCategory(title);
-    const categoryFit = await aiCategoryFit(title, category);
+Return JSON only:
+{
+  "min": number,
+  "max": number,
+  "average": number
+}
+`
+  );
 
-    const market = await aiMarketPrice(title, category);
+  return safeJSON(text);
+}
 
-    const price = product.price
-      ? parseFloat(product.price.replace("$", ""))
-      : null;
+/* ===================== PRODUCT PROBLEMS ===================== */
+/* GPT general knowledge ONLY */
 
-    const pricePosition = classifyPrice(price, market);
+export async function getProductProblems(product) {
+  if (!product) return null;
 
-    const brandEvidence = product.brand
-      ? await searchBrandEvidence(product.brand)
-      : null;
+  const text = await gptSearch(
+    `
+List common consumer issues.
 
-    const sellerEvidence = await searchSellerEvidence(product);
+Product:
+${product}
 
-    const sellerContext = `
-Brand: ${product.brand || "unknown"}
-Seller: ${product.seller || "unknown"}
-Platform: ${product.platform}
-Price position: ${pricePosition}
-`;
+Return JSON only:
+{
+  "issues": string[]
+}
+`
+  );
 
-    const hasBrand = hasMeaningfulValue(product.brand);
-    const hasSeller = hasMeaningfulValue(product.seller);
+  return safeJSON(text);
+}
 
-    const brandIntel = hasBrand
-      ? await aiEntity(product.brand, brandEvidence)
-      : null;
-      const sellerIntel = await aiEntity(
-      hasSeller ? product.seller : product.platform,
-      sellerEvidence,
-      sellerContext
-    );
+/* ===================== BRAND = SELLER MATCH ===================== */
+/* GPT logic only */
 
-    const website = await aiWebsiteTrust(product.platform);
+export async function getBrandSellerMatch(brand, seller) {
+  if (!brand || !seller) return null;
 
-    const productScore = clamp(getEntityScore(brandIntel));
-    const sellerScore = clamp(getEntityScore(sellerIntel));
+  const text = await gptSearch(
+    `
+Determine whether the seller is the brand itself or an authorized brand storefront.
 
-    /* ===================== KEY FIX ===================== */
-    // Website only penalizes if BAD — never boosts
-    const websitePenalty =
-      website.score <= 2 ? -0.75 : 0;
+Brand: ${brand}
+Seller: ${seller}
 
-    const informationCoverageBoost =
-      (product.brand ? 0.2 : 0) +
-      (product.seller ? 0.2 : 0) +
-      (price ? 0.2 : 0);
+Return JSON only:
+{
+  "match": boolean
+}
+`
+  );
 
-    const overall = clamp(
-      productScore * 0.5 +
-        sellerScore * 0.5 +
-        websitePenalty +
-        informationCoverageBoost
-    );
-
-    const overallReason = [
-      `Seller trust: ${sellerScore}/5.`,
-      `Product/brand trust: ${productScore}/5.`,
-      website.score <= 2
-        ? `Website risk detected: ${website.reason}`
-        : null,
-      `Price appears ${pricePosition} relative to market.`,
-      categoryFit?.summary || null,
-      signalText([
-        product.brand ? "brand" : null,
-        product.seller ? "seller" : null,
-        price ? "price" : null,
-        brandEvidence ? "brand evidence" : null,
-        sellerEvidence ? "seller evidence" : null,
-      ]),
-    ]
-      .filter(Boolean)
-      .join(" ");
-
-    return Response.json({
-      aiResult: {
-        title: product.title,
-        category,
-        categoryFit,
-        market,
-        pricePosition,
-
-        websiteTrust: website,
-        sellerTrust: {
-          score: sellerScore,
-          reason: sellerIntel?.summary || "Limited seller data.",
-        },
-        productTrust: {
-          score: productScore,
-          reason: hasBrand
-            ? brandIntel?.summary || "Limited brand data."
-            : "No verifiable brand was found on the listing.",
-        },
-
-        overall: {
-          score: overall,
-          status: overall <= 2 ? "bad" : "good",
-          reason: overallReason,
-        },
-
-        status: overall <= 2 ? "bad" : "good",
-
-        integrations: {
-          openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
-          searchConfigured: isSearchConfigured(),
-        },
-      },
-    });
-  } catch (e) {
-    console.error(e);
-    return Response.json({ error: "Server error" }, { status: 500 });
-  }
+  return safeJSON(text)?.match ?? null;
 }
