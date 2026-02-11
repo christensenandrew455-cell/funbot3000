@@ -15,9 +15,7 @@ export function normalizeBrand(raw) {
 
   if (
     !normalized ||
-    ["null", "undefined", "n/a", "na", "none", "unknown"].includes(
-      normalized
-    )
+    ["null", "undefined", "n/a", "na", "none", "unknown"].includes(normalized)
   ) {
     return null;
   }
@@ -119,7 +117,7 @@ export async function extractFromHTML(url) {
     const $ = cheerio.load(html);
     const productJsonLd = findJsonLdProduct($);
 
-    /* ===== TITLE ===== */
+    /* ===== TITLE → PRODUCT ===== */
 
     const jsonTitle =
       getJsonLdString(productJsonLd?.name) ||
@@ -129,8 +127,11 @@ export async function extractFromHTML(url) {
 
     const amazonTitle = $("#productTitle").text()?.trim() || null;
 
-    const finalTitle = jsonTitle || amazonTitle;
-    if (!finalTitle) return null;
+    const rawTitle = jsonTitle || amazonTitle;
+    if (!rawTitle) return null;
+
+    const product = simplifyTitle(rawTitle);
+    if (!product) return null;
 
     /* ===== OFFERS / PRICE ===== */
 
@@ -171,7 +172,7 @@ export async function extractFromHTML(url) {
     const amazonSeller =
       $("#merchant-info").text()?.trim() || null;
 
-   seller = normalizeEntity(seller || amazonSeller);
+    seller = normalizeEntity(seller || amazonSeller);
 
     /* ===== BRAND ===== */
 
@@ -186,7 +187,7 @@ export async function extractFromHTML(url) {
     /* ===== FINAL OBJECT ===== */
 
     return {
-      title: finalTitle,
+      product,
       price,
       seller,
       brand,
