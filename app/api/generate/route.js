@@ -155,6 +155,11 @@ async function buildAiResult(extracted, analyses) {
     }
   }
 
+    const isOverpriced =
+    Boolean(listingPrice) &&
+    Boolean(referenceAverageNumber) &&
+    listingPrice > referenceAverageNumber * 1.5;
+
   const [websiteTrust, sellerTrust, productTrust] = await Promise.all([
     evaluateTrust({
       area: "Website Trust",
@@ -179,11 +184,35 @@ async function buildAiResult(extracted, analyses) {
     }),
   ]);
   
-  const overallScore = clampScore(
-    (websiteTrust.score + sellerTrust.score + productTrust.score) / 3
-  );
+  let status = "good product";
+  let overallScore = 4;
+  let overallMeaning = "Solid choice";
+  let overallReason =
+    "Core trust signals are stable across website, seller, and product checks. Continue with normal buyer precautions.";
 
-  const status = overallScore >= 3 ? "good" : "bad";
+  if (websiteTrust.score <= 1 || sellerTrust.score <= 1) {
+    status = "scam";
+    overallScore = 1;
+    overallMeaning = "Avoid";
+    overallReason =
+      "Critical trust signals are weak for the website or seller. Do not purchase from this listing.";
+  } else if (
+    websiteTrust.score <= 2 ||
+    sellerTrust.score <= 2 ||
+    productTrust.score <= 2
+  ) {
+    status = "untrustworthy";
+    overallScore = 2;
+    overallMeaning = "High risk";
+    overallReason =
+      "Multiple trust signals are below acceptable confidence. Only proceed if you can independently verify seller and protections.";
+  } else if (isOverpriced) {
+    status = "overpriced";
+    overallScore = 3;
+    overallMeaning = "Safe but bad value";
+    overallReason =
+      "Safety signals are acceptable, but the listing price is significantly above typical market levels. Consider better-value alternatives.";
+  }
 
   return {
     status,
@@ -193,10 +222,8 @@ async function buildAiResult(extracted, analyses) {
     productTrust,
     overall: {
       score: overallScore,
-      reason:
-        status === "good"
-          ? "Signals look mostly consistent with a legitimate listing. Keep normal purchase safeguards in place."
-          : "Multiple trust signals indicate elevated purchase risk. Verify seller, pricing, and return protections before buying.",
+      meaning: overallMeaning,
+      reason: overallReason,
     },
   };
 }
