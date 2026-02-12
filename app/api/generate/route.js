@@ -1,14 +1,7 @@
+// app/api/generate/route.js
 import { OpenAI } from "openai";
 import { extractFromHTML } from "./extract";
-import {
-  getSellerData,
-  getProductData,
-  getBrandPriceData,
-  getProductPriceData,
-  getProductProblemsData,
-  getBrandSellerMatch,
-  simplifyProductTitle,
-} from "./search";
+import { runAllSearches } from "./search";
 
 /* ===================== OPENAI ===================== */
 
@@ -17,7 +10,7 @@ function getClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
-async function gptKnowledge(prompt) {
+async function gpt(prompt) {
   const openai = getClient();
   if (!openai) return null;
 
@@ -50,230 +43,174 @@ function clampScore(value) {
   return Math.max(0, Math.min(5, Math.round(n)));
 }
 
-function parsePrice(value) {
-  if (typeof value === "number") return value;
-  if (typeof value !== "string") return null;
-  const n = Number(value.replace(/[^0-9.]/g, ""));
-  return Number.isFinite(n) ? n : null;
+function cleanReason(v) {
+  if (typeof v !== "string") return null;
+  const s = v.replace(/\s+/g, " ").trim();
+  return s ? s : null;
 }
 
-/* ===================== TRUST EVALUATOR ===================== */
-/* GPT JUSTIFIES — IT DOES NOT DECIDE */
+function fallbackReason(area) {
+  if (area === "Website Trust")
+    return "Domain information was available, but no clear additional signals were provided. Rating is based on general knowledge only.";
+  if (area === "Seller Trust")
+    return "Seller context was limited or unclear. Rating is based on the provided seller/brand relationship and general knowledge only.";
+  if (area === "Product Trust")
+    return "Product context was limited or unclear. Rating is based on the provided product information and general knowledge only.";
+  return "Information was limited. Rating is based on available context only.";
+}
 
-async function evaluateTrust({ area, scoreHint, facts, fallbackReason }) {
-    const localReason = buildReasonFromFacts(facts, fallbackReason);
-  const factsText = Array.isArray(facts) && facts.length
-    ? facts.map((fact) => `- ${fact}`).join("\n")
-    : "- No extra facts provided.";
+/* ===================== GPT DECISION: AREA RATER ===================== */
+/* GPT DECIDES SCORE + REASON USING ONLY THE PROVIDED INPUTS */
 
-  const text = await gptKnowledge(`
-You are explaining a trust score for an ecommerce product.
+async function rateArea({
+  area,
+  inputs, // object of key/value facts
+  strictFallbackScore = 3,
+}) {
+  const entries = Object.entries(inputs || {}).map(([k, v]) => {
+    const val =
+      v === null || v === undefined || v === "" ? "null" : String(v).trim();
+    return `- ${k}: ${val}`;
+  });
 
-Area: ${area}
-Score (already decided): ${scoreHint}/5
+  const text = await gpt(`
+You are rating an ecommerce listing.
 
-Facts:
-${factsText}
+IMPORTANT RULES:
+- You must decide the score yourself (do NOT say "already decided").
+- Use ONLY the inputs below plus general knowledge. Do not invent additional facts.
+- Be neutral and factual. No fear language and no absolutes.
+- Output MUST be JSON only, with the exact keys shown.
+- "reason" MUST be exactly TWO short factual sentences.
+
+AREA: ${area}
+
+INPUTS:
+${entries.length ? entries.join("\n") : "- (none)"}
 
 Return JSON only:
 {
-  "score": ${scoreHint},
-  "reason": "Two short factual sentences that use only the provided facts."
+  "score": 1-5 integer,
+  "reason": "Two short factual sentences."
 }
 `);
 
   const parsed = safeJSON(text, null);
-  const cleanedReason = sanitizeReason(parsed?.reason);
-  
+  const score = clampScore(parsed?.score);
+  const reason = cleanReason(parsed?.reason);
+
   return {
-    score: scoreHint,
-    reason: cleanedReason || localReason,
+    score: score || strictFallbackScore,
+    reason: reason || fallbackReason(area),
   };
 }
 
-function sanitizeReason(reason) {
-  if (typeof reason !== "string") return null;
-  const trimmed = reason.trim();
-  if (!trimmed) return null;
+/* ===================== GPT DECISION: OVERALL ===================== */
 
-  const lower = trimmed.toLowerCase();
-  if (
-    lower.includes("exactly two short factual sentences") ||
-    lower.includes("two short factual sentences")
-  ) {
-    return null;
-  }
+async function rateOverall({ title, websiteTrust, sellerTrust, productTrust }) {
+  const text = await gpt(`
+You are producing an overall rating for an ecommerce listing based ONLY on the component results below.
 
-  return trimmed;
+IMPORTANT RULES:
+- Decide status + score yourself.
+- Be neutral and factual. No fear language and no absolutes.
+- Output MUST be JSON only with the exact keys shown.
+- "reason" MUST be exactly TWO short factual sentences.
+- Status MUST be one of: "scam", "untrustworthy", "overpriced", "good product"
+
+TITLE: ${title || "unknown"}
+
+COMPONENTS:
+- Website Trust: ${websiteTrust?.score ?? "null"}/5 — ${websiteTrust?.reason ?? "null"}
+- Seller Trust: ${sellerTrust?.score ?? "null"}/5 — ${sellerTrust?.reason ?? "null"}
+- Product Trust: ${productTrust?.score ?? "null"}/5 — ${productTrust?.reason ?? "null"}
+
+Return JSON only:
+{
+  "status": "scam|untrustworthy|overpriced|good product",
+  "score": 1-5 integer,
+  "meaning": "2-5 words (e.g., 'Avoid', 'Quality concerns', 'Safe but poor value', 'Solid value')",
+  "reason": "Two short factual sentences."
 }
+`);
 
-function splitIntoSentences(text) {
-  return text
-    .split(/(?<=[.!?])\s+/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
+  const parsed = safeJSON(text, null);
 
-function ensurePeriod(sentence) {
-  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
-}
+  const statusRaw = typeof parsed?.status === "string" ? parsed.status.trim() : "";
+  const allowed = new Set(["scam", "untrustworthy", "overpriced", "good product"]);
+  const status = allowed.has(statusRaw) ? statusRaw : "good product";
 
-function buildReasonFromFacts(facts, fallbackReason) {
-  const rawFacts = Array.isArray(facts)
-    ? facts.filter((fact) => typeof fact === "string" && fact.trim())
-    : [];
-
-  const sentences = rawFacts
-    .flatMap(splitIntoSentences)
-    .slice(0, 2)
-    .map(ensurePeriod);
-
-  if (sentences.length >= 2) return `${sentences[0]} ${sentences[1]}`;
-  if (sentences.length === 1) return `${sentences[0]} ${ensurePeriod(fallbackReason)}`;
-  return ensurePeriod(fallbackReason);
+  return {
+    status,
+    score: clampScore(parsed?.score) || 3,
+    meaning: cleanReason(parsed?.meaning) || "Mixed signals",
+    reason: cleanReason(parsed?.reason) || "Component signals were mixed. The overall rating reflects the available evidence.",
+  };
 }
 
 /* ===================== CORE LOGIC ===================== */
 
 async function buildAiResult(extracted, analyses) {
-  const {
-    sellerData,
-    productData,
-    brandPriceData,
-    productPriceData,
-    productProblemsData,
-    brandSellerMatch,
-  } = analyses;
+  const { sellerData, productData, brandPriceData, productPriceData, productProblemsData } =
+    analyses || {};
 
-  const isAmazon = extracted.platform?.includes("amazon");
+  const title = extracted.brandSimple || extracted.product || "Unknown Product";
 
-  /* ---------- WEBSITE TRUST ---------- */
-  let websiteScore = isAmazon ? 5 : 3;
-  const websiteFacts = [];
+  // Website is rated from domain + GPT general knowledge (plus price if you want it visible to GPT).
+  const websiteTrust = await rateArea({
+    area: "Website Trust",
+    inputs: {
+      domain: extracted.domain,
+      price: extracted.price ?? null,
+    },
+    strictFallbackScore: 3,
+  });
 
-  if (isAmazon) {
-    websiteFacts.push("Listing is hosted on Amazon, a mainstream marketplace with buyer protections.");
-  } else if (extracted.platform) {
-    websiteFacts.push(`Platform detected as ${extracted.platform}.`);
-  }
+  // Seller rated from: sellerMatchesBrand + sellerData + price against brandPriceData
+  const sellerTrust = await rateArea({
+    area: "Seller Trust",
+    inputs: {
+      seller: extracted.seller ?? null,
+      sellerMatchesBrand: extracted.sellerMatchesBrand ?? "no",
+      price: extracted.price ?? null,
+      brandPriceData: brandPriceData ?? null,
+      sellerData: sellerData ?? null,
+    },
+    strictFallbackScore: 3,
+  });
 
-  /* ---------- SELLER TRUST ---------- */
-  let sellerScore = isAmazon ? 4 : 3;
-  const sellerFacts = [];
+  // Product rated from: productData + productPriceData + productProblemsData (+ listing price)
+  const productTrust = await rateArea({
+    area: "Product Trust",
+    inputs: {
+      brandSimple: extracted.brandSimple ?? null,
+      product: extracted.product ?? null,
+      price: extracted.price ?? null,
+      productData: productData ?? null,
+      productPriceData: productPriceData ?? null,
+      productProblemsData: productProblemsData ?? null,
+    },
+    strictFallbackScore: 3,
+  });
 
-  if (brandSellerMatch === "yes") {
-    sellerScore += 1;
-    sellerFacts.push("Seller appears aligned with the brand storefront.");
-  }
-
-  if (sellerData) {
-    sellerFacts.push(sellerData);
-  }
-
-  sellerScore = clampScore(sellerScore);
-
-  /* ---------- PRODUCT TRUST ---------- */
-  let productScore = isAmazon ? 4 : 3;
-  const productFacts = [];
-
-  if (productData) productFacts.push(productData);
-
-  if (productProblemsData) {
-    const problems = productProblemsData.toLowerCase();
-
-    // ONLY penalize for real defects
-    if (
-      problems.includes("break") ||
-      problems.includes("unsafe") ||
-      problems.includes("fake") ||
-      problems.includes("defect")
-    ) {
-      productScore -= 1;
-      productFacts.push("Some reports indicate possible functional or safety defects.");
-    } else {
-      productFacts.push("Reported issues appear to be preference or usage-related, not defects.");
-    }
-  }
-
-  /* ---------- PRICE CONTEXT ---------- */
-  const listingPrice = parsePrice(extracted.price);
-  const referencePrice =
-    parsePrice(brandPriceData?.match(/\d+[\d,.]*/)?.[0]) ||
-    parsePrice(productPriceData?.match(/\d+[\d,.]*/)?.[0]);
-
-  let isOverpriced = false;
-
-  if (listingPrice && referencePrice) {
-    if (listingPrice > referencePrice * 1.5) {
-      isOverpriced = true;
-      productScore -= 1;
-      productFacts.push("Listing price is significantly higher than typical market pricing.");
-    } else if (listingPrice <= referencePrice * 1.2) {
-      productScore += 1;
-      productFacts.push("Price is competitive for this product category.");
-    }
-  }
-
-  productScore = clampScore(productScore);
-
-  /* ---------- FINAL TRUST OBJECTS ---------- */
-  const [websiteTrust, sellerTrust, productTrust] = await Promise.all([
-    evaluateTrust({
-      area: "Website Trust",
-      scoreHint: websiteScore,
-      facts: websiteFacts,
-      fallbackReason: "The website appears legitimate with standard buyer protections.",
-    }),
-    evaluateTrust({
-      area: "Seller Trust",
-      scoreHint: sellerScore,
-      facts: sellerFacts,
-      fallbackReason: "Seller appears legitimate with no strong risk signals.",
-    }),
-    evaluateTrust({
-      area: "Product Trust",
-      scoreHint: productScore,
-      facts: productFacts,
-      fallbackReason: "Product appears consistent with expectations for its category and price.",
-    }),
-  ]);
-
-  /* ---------- OVERALL ---------- */
-  let status = "good product";
-  let overallScore = 4;
-  let overallMeaning = "Solid value";
-  let overallReason =
-    "Trust signals are stable and the product aligns with expectations for its price category.";
-
-  if (websiteTrust.score <= 1 || sellerTrust.score <= 1) {
-    status = "scam";
-    overallScore = 1;
-    overallMeaning = "Avoid";
-    overallReason = "Critical trust failures detected with the seller or platform.";
-  } else if (productTrust.score <= 2) {
-    status = "untrustworthy";
-    overallScore = 2;
-    overallMeaning = "Quality concerns";
-    overallReason =
-      "Some functional concerns were identified. Consider alternatives if quality is critical.";
-  } else if (isOverpriced) {
-    status = "overpriced";
-    overallScore = 3;
-    overallMeaning = "Safe but poor value";
-    overallReason =
-      "Product appears legitimate but is priced higher than comparable alternatives.";
-  }
+  // Overall decided by GPT from component results (scores + reasons)
+  const overall = await rateOverall({
+    title,
+    websiteTrust,
+    sellerTrust,
+    productTrust,
+  });
 
   return {
-    status,
-    title: extracted.product || "Unknown Product",
+    status: overall.status,
+    title,
     websiteTrust,
     sellerTrust,
     productTrust,
     overall: {
-      score: overallScore,
-      meaning: overallMeaning,
-      reason: overallReason,
+      score: overall.score,
+      meaning: overall.meaning,
+      reason: overall.reason,
     },
   };
 }
@@ -295,30 +232,20 @@ export async function POST(request) {
       );
     }
 
-    const simplified = await simplifyProductTitle({
-      brand: extracted.brand,
-      product: extracted.product || extracted.rawTitle,
+    const analyses = await runAllSearches({
+      seller: extracted.seller,
+      brandSimple: extracted.brandSimple,
+      product: extracted.product,
     });
 
-    if (simplified) extracted.product = simplified;
+    if (!analyses) {
+      return Response.json(
+        { error: "Search is not configured or failed." },
+        { status: 500 }
+      );
+    }
 
-    const analyses = await Promise.all([
-      getSellerData(extracted.seller),
-      getProductData({ brand: extracted.brand, product: extracted.product }),
-      getBrandPriceData({ brand: extracted.brand, product: extracted.product }),
-      getProductPriceData(extracted.product),
-      getProductProblemsData(extracted.product),
-      getBrandSellerMatch({ brand: extracted.brand, seller: extracted.seller }),
-    ]);
-
-    const aiResult = await buildAiResult(extracted, {
-      sellerData: analyses[0],
-      productData: analyses[1],
-      brandPriceData: analyses[2],
-      productPriceData: analyses[3],
-      productProblemsData: analyses[4],
-      brandSellerMatch: analyses[5],
-    });
+    const aiResult = await buildAiResult(extracted, analyses);
 
     return Response.json({ aiResult, extracted });
   } catch {
