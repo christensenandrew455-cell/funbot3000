@@ -11,11 +11,69 @@ export function isSearchConfigured() {
   return Boolean(process.env.OPENAI_API_KEY);
 }
 
-/* ===================== GPT HELPERS ===================== */
+/* ===================== UTILS ===================== */
 
-async function gptSearch(prompt) {
+function safeJSON(text, fallback = null) {
+  if (!text || typeof text !== "string") return fallback;
+  try {
+    const m = text.match(/\{[\s\S]*\}/);
+    return m ? JSON.parse(m[0]) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function cleanParagraph(v) {
+  if (typeof v !== "string") return null;
+  const s = v.replace(/\s+/g, " ").trim();
+  if (!s) return null;
+  return s;
+}
+
+/* ===================== ONE-CALL SEARCH ===================== */
+/**
+ * Single web-search-enabled call that returns ALL requested outputs at once.
+ * Inputs:
+ *  - seller
+ *  - brandSimple
+ *  - product (generic category like "earbuds")
+ * Output JSON:
+ *  {
+ *    "sellerData": "...",
+ *    "productData": "...",
+ *    "brandPriceData": "...",
+ *    "productPriceData": "...",
+ *    "productProblemsData": "..."
+ *  }
+ */
+export async function runAllSearches({ seller, brandSimple, product }) {
   const openai = getClient();
   if (!openai) return null;
+
+  const prompt = `
+You are gathering neutral, fact-based background information to help a user understand an ecommerce listing.
+
+Rules (important):
+- Be neutral and factual. Do not use emotional language. Do not label anything a scam.
+- If you do not find clear information, return: "No clear information found."
+- Keep each field to 1 short paragraph (2–4 sentences max).
+- Prefer widely-cited/credible sources when possible.
+- Return JSON only with the exact keys below.
+
+Inputs:
+Seller: ${seller || "unknown"}
+Brand/Query (brandSimple): ${brandSimple || "unknown"}
+Product category (generic): ${product || "unknown"}
+
+Return JSON only:
+{
+  "sellerData": "General info people mention about the seller (neutral).",
+  "productData": "General info people mention about the brandSimple item (neutral).",
+  "brandPriceData": "Typical prices/ranges mentioned online for brandSimple (neutral).",
+  "productPriceData": "Typical general market price range for the product category (neutral).",
+  "productProblemsData": "Commonly mentioned issues or complaints tied to brandSimple (neutral)."
+}
+`;
 
   try {
     const res = await openai.responses.create({
@@ -24,182 +82,50 @@ async function gptSearch(prompt) {
       input: prompt,
     });
 
-    return res.output_text || null;
-  } catch {
-    return null;
-  }
-}
+    const text = res.output_text || null;
+    const parsed = safeJSON(text, null);
+    if (!parsed) return null;
 
-async function gptKnowledge(prompt) {
-  const openai = getClient();
-  if (!openai) return null;
-
-  try {
-    const res = await openai.responses.create({
-      model: "gpt-4o-mini",
-      input: prompt,
-    });
-
-    return res.output_text || null;
-  } catch {
-    return null;
-  }
-}
-
-/* ===================== TITLE CLASSIFICATION ===================== */
-
-/**
- * Raw title → { product, brand }
- * Example:
- * product: "earbuds"
- * brand: "apple airpods"
- */
-export async function simplifyProductTitle({ brand, product }) {
-  if (!product) return null;
-
-  const text = await gptKnowledge(`
-You are classifying an ecommerce product title.
-
-Original title:
-${product}
-
-Known brand (if any):
-${brand || "unknown"}
-
-Return JSON only:
-{
-  "product": "generic product category (e.g. earbuds, laptop, smartwatch)",
-  "brand": "recognizable product line or branded family name"
-}
-
-Rules:
-- Product must be generic (object type only).
-- Brand should reflect how people commonly refer to the product (e.g. 'apple airpods').
-- Remove marketing terms, condition notes, and model numbers unless they define the product family.
-- Use lowercase.
-`);
-
-  try {
-    const parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0]);
     return {
-      product: parsed?.product || null,
-      brand: parsed?.brand || null,
+      sellerData: cleanParagraph(parsed.sellerData) || "No clear information found.",
+      productData: cleanParagraph(parsed.productData) || "No clear information found.",
+      brandPriceData: cleanParagraph(parsed.brandPriceData) || "No clear information found.",
+      productPriceData: cleanParagraph(parsed.productPriceData) || "No clear information found.",
+      productProblemsData:
+        cleanParagraph(parsed.productProblemsData) || "No clear information found.",
     };
   } catch {
     return null;
   }
 }
 
-/* ===================== SEARCH ===================== */
-
+/* ===================== COMPAT WRAPPERS ===================== */
 /**
- * Seller → what people report about them
+ * These keep your existing route.js calls working if you still call the old functions.
+ * BUT: for best performance/cost, call runAllSearches() once and use the returned fields.
  */
+
 export async function getSellerData(seller) {
-  if (!seller) return null;
-
-  return gptSearch(`
-Search for information about this seller.
-
-Seller:
-${seller}
-
-Summarize what is commonly mentioned about this seller online.
-Include anything notable that comes up.
-
-Return one short paragraph.
-`);
+  const all = await runAllSearches({ seller, brandSimple: null, product: null });
+  return all?.sellerData || null;
 }
 
-/**
- * Brand + Product → what people say about the thing
- */
-export async function getProductData({ brand, product }) {
-  if (!brand || !product) return null;
-
-  return gptSearch(`
-Search for information about this product.
-
-Product:
-${brand} ${product}
-
-Summarize what people commonly mention about it online.
-
-Return one short paragraph.
-`);
+export async function getProductData(brandSimple) {
+  const all = await runAllSearches({ seller: null, brandSimple, product: null });
+  return all?.productData || null;
 }
 
-/**
- * Brand + Product → price mentions
- */
-export async function getBrandPriceData({ brand, product }) {
-  if (!brand || !product) return null;
-
-  return gptSearch(`
-Search for pricing information about this product.
-
-Product:
-${brand} ${product}
-
-Summarize typical prices or price ranges mentioned online.
-
-Return one short paragraph.
-`);
+export async function getBrandPriceData(brandSimple) {
+  const all = await runAllSearches({ seller: null, brandSimple, product: null });
+  return all?.brandPriceData || null;
 }
 
-/**
- * Product type → general market pricing
- */
 export async function getProductPriceData(product) {
-  if (!product) return null;
-
-  return gptKnowledge(`
-Based on general market knowledge, what is a typical price range for this type of product?
-
-Product type:
-${product}
-
-Return one short paragraph.
-`);
+  const all = await runAllSearches({ seller: null, brandSimple: null, product });
+  return all?.productPriceData || null;
 }
 
-/**
- * Product → commonly reported problems
- */
-export async function getProductProblemsData(product) {
-  if (!product) return null;
-
-  return gptSearch(`
-Search for discussions or reports about problems with this product.
-
-Product:
-${product}
-
-Summarize commonly mentioned issues if any appear.
-
-Return one short paragraph.
-`);
-}
-
-/**
- * Brand vs Seller alignment
- */
-export async function getBrandSellerMatch({ brand, seller }) {
-  if (!brand || !seller) return null;
-
-  const result = await gptKnowledge(`
-Is this seller likely an official or authorized seller of this product line?
-
-Brand:
-${brand}
-
-Seller:
-${seller}
-
-Return only:
-YES or NO
-`);
-
-  if (!result) return null;
-  return result.trim().toUpperCase().startsWith("Y") ? "yes" : "no";
+export async function getProductProblemsData(brandSimple) {
+  const all = await runAllSearches({ seller: null, brandSimple, product: null });
+  return all?.productProblemsData || null;
 }
