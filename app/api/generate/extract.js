@@ -1,5 +1,39 @@
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
+import { OpenAI } from "openai";
+
+/* ===================== OPENAI ===================== */
+
+function getClient() {
+  if (!process.env.OPENAI_API_KEY) return null;
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
+
+async function gptKnowledge(prompt) {
+  const openai = getClient();
+  if (!openai) return null;
+
+  try {
+    const res = await openai.responses.create({
+      // Use whatever you want here; keeping it consistent + cheap:
+      model: "gpt-4o-mini",
+      input: prompt,
+    });
+    return res.output_text || null;
+  } catch {
+    return null;
+  }
+}
+
+function safeJSON(text, fallback = null) {
+  if (!text || typeof text !== "string") return fallback;
+  try {
+    const m = text.match(/\{[\s\S]*\}/);
+    return m ? JSON.parse(m[0]) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 /* ===================== NORMALIZATION ===================== */
 
@@ -31,21 +65,15 @@ function normalizeEntity(value) {
   return normalized;
 }
 
-/* Keep seller short/clean (especially Amazon blobs) */
 function normalizeSeller(raw) {
   const v = normalizeEntity(raw);
   if (!v) return null;
 
-  // Common Amazon patterns:
-  // "Ships from Amazon.com Sold by Apple Store"
-  // "Sold by Apple Store and Fulfilled by Amazon."
+  // Prefer a "Sold by X" chunk if present (Amazon merchant-info blobs)
   let s = v;
-
-  // Prefer the "Sold by X" chunk if present
   const soldBy = s.match(/sold by\s+([^.\n\r|]+)\b/i);
   if (soldBy?.[1]) s = soldBy[1];
 
-  // Remove fulfillment / shipping boilerplate
   s = s
     .replace(/ships from\s+[^.\n\r|]+/gi, "")
     .replace(/fulfilled by\s+[^.\n\r|]+/gi, "")
@@ -54,6 +82,23 @@ function normalizeSeller(raw) {
     .trim();
 
   return normalizeEntity(s);
+}
+
+function normalizeDomain(hostname) {
+  return String(hostname || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^www\./, "");
+}
+
+function isAmazonContext(domain, seller) {
+  const d = normalizeDomain(domain);
+  const s = (seller || "").toLowerCase();
+  // Your rule: if seller is Amazon.com => auto match
+  if (s.includes("amazon.com") || s === "amazon") return true;
+  // Also treat amazon storefront context as “Amazon context”
+  if (d.includes("amazon.")) return true;
+  return false;
 }
 
 /* ===================== JSON-LD HELPERS ===================== */
@@ -78,12 +123,9 @@ function findJsonLdProduct($) {
     if (!text) return;
     try {
       collectJsonLdNodes(JSON.parse(text), nodes);
-    } catch {
-      // ignore invalid JSON-LD blocks
-    }
+    } catch {}
   });
 
-  // Prefer first Product node
   return nodes.find((node) => {
     const type = node?.["@type"];
     if (!type) return false;
@@ -103,7 +145,6 @@ function pickJsonLdOffer(offers) {
   if (!offers) return null;
   if (!Array.isArray(offers)) return offers;
 
-  // Pick first offer with a usable price
   for (const o of offers) {
     const p = o?.price ?? o?.priceSpecification?.price;
     if (p !== undefined && p !== null) return o;
@@ -111,11 +152,102 @@ function pickJsonLdOffer(offers) {
   return offers[0] || null;
 }
 
+/* ===================== AI STEP (MATCH + SIMPLIFY) ===================== */
+/**
+ * Inputs: rawTitle, brand, seller, domain
+ * Outputs:
+ *  - sellerMatchesBrand: "yes" | "no"
+ *  - brandSimple: string|null
+ *  - product: string|null (generic category)
+ */
+async function aiMatchAndSimplify({ rawTitle, brand, seller, domain }) {
+  // Amazon override
+  if (isAmazonContext(domain, seller)) {
+    // Still simplify title -> brandSimple/product using AI (optional).
+    const text = await gptKnowledge(`
+You are simplifying an ecommerce product title.
+
+Title:
+${rawTitle}
+
+Return JSON only:
+{
+  "brandSimple": "short brand / product line name people use (lowercase)",
+  "product": "generic product category (lowercase, object type only)"
+}
+
+Rules:
+- Remove SEO fluff, condition notes, shipping terms, and seller names.
+- Keep it short.
+- Use lowercase.
+`);
+    const parsed = safeJSON(text, null);
+    return {
+      sellerMatchesBrand: "yes",
+      brandSimple: typeof parsed?.brandSimple === "string" ? parsed.brandSimple.trim() : null,
+      product: typeof parsed?.product === "string" ? parsed.product.trim() : null,
+    };
+  }
+
+  const prompt = `
+You do TWO tasks.
+
+Task A: Seller matches brand?
+Brand:
+${brand || "unknown"}
+
+Seller:
+${seller || "unknown"}
+
+Return "yes" only if the seller name clearly looks like the official brand storefront, official store name, or the brand itself.
+Otherwise return "no".
+Return strictly yes/no in the JSON field only.
+
+Task B: Simplify the title.
+Title:
+${rawTitle}
+
+Return JSON only:
+{
+  "sellerMatchesBrand": "yes or no",
+  "brandSimple": "short brand / product line name people use (lowercase)",
+  "product": "generic product category (lowercase, object type only)"
+}
+
+Rules for B:
+- Remove marketing fluff/SEO terms, condition notes, and model numbers unless they define the family name.
+- brandSimple should be how people refer to the product line (e.g., "apple airpods"), not the seller.
+- product must be the generic object type only (e.g., "earbuds", "laptop", "smartwatch").
+- Use lowercase.
+`;
+
+  const text = await gptKnowledge(prompt);
+  const parsed = safeJSON(text, null);
+
+  const yn = String(parsed?.sellerMatchesBrand || "")
+    .trim()
+    .toLowerCase()
+    .startsWith("y")
+    ? "yes"
+    : "no";
+
+  return {
+    sellerMatchesBrand: yn,
+    brandSimple:
+      typeof parsed?.brandSimple === "string" && parsed.brandSimple.trim()
+        ? parsed.brandSimple.trim()
+        : null,
+    product:
+      typeof parsed?.product === "string" && parsed.product.trim()
+        ? parsed.product.trim()
+        : null,
+  };
+}
+
 /* ===================== HTML EXTRACT ===================== */
 
 export async function extractFromHTML(url) {
   try {
-    // Basic URL validation (prevents weird schemes)
     const u = new URL(url);
     if (!/^https?:$/.test(u.protocol)) return null;
 
@@ -132,14 +264,14 @@ export async function extractFromHTML(url) {
 
     const html = await res.text();
 
-    // Basic size & bot checks
+    // bot / low-content checks
     if (html.length < 2000) return null;
-    if (html.length > 2_000_000) return null; // avoid huge pages
     if (/captcha|robot check|automated access|verify you are human/i.test(html))
       return null;
 
     const $ = cheerio.load(html);
     const productJsonLd = findJsonLdProduct($);
+    const offer = pickJsonLdOffer(productJsonLd?.offers);
 
     const rawTitle =
       getJsonLdString(productJsonLd?.name) ||
@@ -150,8 +282,6 @@ export async function extractFromHTML(url) {
 
     if (!rawTitle) return null;
 
-    const offer = pickJsonLdOffer(productJsonLd?.offers);
-
     let price =
       offer?.price ??
       offer?.priceSpecification?.price ??
@@ -159,7 +289,6 @@ export async function extractFromHTML(url) {
       $(".a-price .a-offscreen").first().text() ||
       null;
 
-    // More robust price capture (commas + optional decimals)
     if (price) {
       const m = String(price).match(/(\$)?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?/);
       price = m ? m[0] : null;
@@ -180,13 +309,25 @@ export async function extractFromHTML(url) {
 
     brand = normalizeBrand(brand);
 
-    return {
-      product: rawTitle, // keep as-is; your later AI step will simplify it
+    const domain = normalizeDomain(u.hostname);
+
+    // AI step happens HERE (inside extract.js as you requested)
+    const ai = await aiMatchAndSimplify({
       rawTitle,
-      price,
-      seller,
       brand,
-      platform: u.hostname.replace(/^www\./, ""),
+      seller,
+      domain,
+    });
+
+    // Return ONLY what you said should transfer forward (no title/rawTitle)
+    return {
+      seller,
+      price,
+      domain,
+      platform: domain, // keeping alias for compatibility
+      sellerMatchesBrand: ai?.sellerMatchesBrand || "no",
+      brandSimple: ai?.brandSimple || null,
+      product: ai?.product || null,
       source: "html",
     };
   } catch {
