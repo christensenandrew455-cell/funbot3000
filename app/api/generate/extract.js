@@ -284,12 +284,12 @@ export async function extractFromHTML(url) {
 
     if (!rawTitle) return null;
 
-    // ✅ FIX: parenthesize when mixing ?? with || (Turbopack parser requirement)
-    let price =
-      (offer?.price ?? offer?.priceSpecification?.price) ??
-      $('meta[property="product:price:amount"]').attr("content") ||
-      $(".a-price .a-offscreen").first().text() ||
-      null;
+    // Turbopack requires explicit grouping when mixing ?? with logical operators.
+    const offerPrice = offer?.price ?? offer?.priceSpecification?.price;
+    const metaPrice = $('meta[property="product:price:amount"]').attr("content");
+    const domPrice = $(".a-price .a-offscreen").first().text();
+
+    let price = offerPrice ?? metaPrice ?? domPrice ?? null;
 
     if (price) {
       const m = String(price).match(/(\$)?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?/);
