@@ -61,6 +61,11 @@ function parsePrice(value) {
 /* GPT JUSTIFIES — IT DOES NOT DECIDE */
 
 async function evaluateTrust({ area, scoreHint, facts, fallbackReason }) {
+    const localReason = buildReasonFromFacts(facts, fallbackReason);
+  const factsText = Array.isArray(facts) && facts.length
+    ? facts.map((fact) => `- ${fact}`).join("\n")
+    : "- No extra facts provided.";
+
   const text = await gptKnowledge(`
 You are explaining a trust score for an ecommerce product.
 
@@ -68,21 +73,64 @@ Area: ${area}
 Score (already decided): ${scoreHint}/5
 
 Facts:
-${facts}
+${factsText}
 
 Return JSON only:
 {
   "score": ${scoreHint},
-  "reason": "Exactly two short factual sentences."
+  "reason": "Two short factual sentences that use only the provided facts."
 }
 `);
 
   const parsed = safeJSON(text, null);
-
+  const cleanedReason = sanitizeReason(parsed?.reason);
+  
   return {
     score: scoreHint,
-    reason: parsed?.reason || fallbackReason,
+    reason: cleanedReason || localReason,
   };
+}
+
+function sanitizeReason(reason) {
+  if (typeof reason !== "string") return null;
+  const trimmed = reason.trim();
+  if (!trimmed) return null;
+
+  const lower = trimmed.toLowerCase();
+  if (
+    lower.includes("exactly two short factual sentences") ||
+    lower.includes("two short factual sentences")
+  ) {
+    return null;
+  }
+
+  return trimmed;
+}
+
+function splitIntoSentences(text) {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function ensurePeriod(sentence) {
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
+}
+
+function buildReasonFromFacts(facts, fallbackReason) {
+  const rawFacts = Array.isArray(facts)
+    ? facts.filter((fact) => typeof fact === "string" && fact.trim())
+    : [];
+
+  const sentences = rawFacts
+    .flatMap(splitIntoSentences)
+    .slice(0, 2)
+    .map(ensurePeriod);
+
+  if (sentences.length >= 2) return `${sentences[0]} ${sentences[1]}`;
+  if (sentences.length === 1) return `${sentences[0]} ${ensurePeriod(fallbackReason)}`;
+  return ensurePeriod(fallbackReason);
 }
 
 /* ===================== CORE LOGIC ===================== */
@@ -173,19 +221,19 @@ async function buildAiResult(extracted, analyses) {
     evaluateTrust({
       area: "Website Trust",
       scoreHint: websiteScore,
-      facts: websiteFacts.join("\n"),
+      facts: websiteFacts,
       fallbackReason: "The website appears legitimate with standard buyer protections.",
     }),
     evaluateTrust({
       area: "Seller Trust",
       scoreHint: sellerScore,
-      facts: sellerFacts.join("\n"),
+      facts: sellerFacts,
       fallbackReason: "Seller appears legitimate with no strong risk signals.",
     }),
     evaluateTrust({
       area: "Product Trust",
       scoreHint: productScore,
-      facts: productFacts.join("\n"),
+      facts: productFacts,
       fallbackReason: "Product appears consistent with expectations for its category and price.",
     }),
   ]);
