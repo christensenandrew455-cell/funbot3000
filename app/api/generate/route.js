@@ -62,11 +62,7 @@ function fallbackReason(area) {
 /* ===================== GPT DECISION: AREA RATER ===================== */
 /* GPT DECIDES SCORE + REASON USING ONLY THE PROVIDED INPUTS */
 
-async function rateArea({
-  area,
-  inputs, // object of key/value facts
-  strictFallbackScore = 3,
-}) {
+async function rateArea({ area, inputs, strictFallbackScore = 3 }) {
   const entries = Object.entries(inputs || {}).map(([k, v]) => {
     const val =
       v === null || v === undefined || v === "" ? "null" : String(v).trim();
@@ -144,24 +140,30 @@ Return JSON only:
     status,
     score: clampScore(parsed?.score) || 3,
     meaning: cleanReason(parsed?.meaning) || "Mixed signals",
-    reason: cleanReason(parsed?.reason) || "Component signals were mixed. The overall rating reflects the available evidence.",
+    reason:
+      cleanReason(parsed?.reason) ||
+      "Component signals were mixed. The overall rating reflects the available evidence.",
   };
 }
 
 /* ===================== CORE LOGIC ===================== */
 
 async function buildAiResult(extracted, analyses) {
-  const { sellerData, productData, brandPriceData, productPriceData, productProblemsData } =
-    analyses || {};
+  const {
+    sellerData,
+    productData,
+    brandPriceData,
+    productPriceData,
+    productProblemsData,
+  } = analyses || {};
 
   const title = extracted.brandSimple || extracted.product || "Unknown Product";
 
-  // Website is rated from domain + GPT general knowledge (plus price if you want it visible to GPT).
+  // Website rated from: domain + GPT general knowledge
   const websiteTrust = await rateArea({
     area: "Website Trust",
     inputs: {
-      domain: extracted.domain,
-      price: extracted.price ?? null,
+      domain: extracted.domain ?? null,
     },
     strictFallbackScore: 3,
   });
@@ -170,22 +172,18 @@ async function buildAiResult(extracted, analyses) {
   const sellerTrust = await rateArea({
     area: "Seller Trust",
     inputs: {
-      seller: extracted.seller ?? null,
       sellerMatchesBrand: extracted.sellerMatchesBrand ?? "no",
+      sellerData: sellerData ?? null,
       price: extracted.price ?? null,
       brandPriceData: brandPriceData ?? null,
-      sellerData: sellerData ?? null,
     },
     strictFallbackScore: 3,
   });
 
-  // Product rated from: productData + productPriceData + productProblemsData (+ listing price)
+  // Product rated from: productData + productPriceData + productProblemsData
   const productTrust = await rateArea({
     area: "Product Trust",
     inputs: {
-      brandSimple: extracted.brandSimple ?? null,
-      product: extracted.product ?? null,
-      price: extracted.price ?? null,
       productData: productData ?? null,
       productPriceData: productPriceData ?? null,
       productProblemsData: productProblemsData ?? null,
@@ -193,7 +191,7 @@ async function buildAiResult(extracted, analyses) {
     strictFallbackScore: 3,
   });
 
-  // Overall decided by GPT from component results (scores + reasons)
+  // Overall decided by GPT from component results
   const overall = await rateOverall({
     title,
     websiteTrust,
