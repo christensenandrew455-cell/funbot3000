@@ -1,3 +1,4 @@
+// app/api/generate/extract.js
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 import { OpenAI } from "openai";
@@ -184,7 +185,8 @@ Rules:
     const parsed = safeJSON(text, null);
     return {
       sellerMatchesBrand: "yes",
-      brandSimple: typeof parsed?.brandSimple === "string" ? parsed.brandSimple.trim() : null,
+      brandSimple:
+        typeof parsed?.brandSimple === "string" ? parsed.brandSimple.trim() : null,
       product: typeof parsed?.product === "string" ? parsed.product.trim() : null,
     };
   }
@@ -282,9 +284,9 @@ export async function extractFromHTML(url) {
 
     if (!rawTitle) return null;
 
+    // ✅ FIX: parenthesize when mixing ?? with || (Turbopack parser requirement)
     let price =
-      offer?.price ??
-      offer?.priceSpecification?.price ??
+      (offer?.price ?? offer?.priceSpecification?.price) ??
       $('meta[property="product:price:amount"]').attr("content") ||
       $(".a-price .a-offscreen").first().text() ||
       null;
@@ -303,9 +305,7 @@ export async function extractFromHTML(url) {
     seller = normalizeSeller(seller);
 
     let brand =
-      getJsonLdString(productJsonLd?.brand) ||
-      $('[itemprop="brand"]').text() ||
-      null;
+      getJsonLdString(productJsonLd?.brand) || $('[itemprop="brand"]').text() || null;
 
     brand = normalizeBrand(brand);
 
