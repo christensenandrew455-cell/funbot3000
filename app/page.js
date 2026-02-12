@@ -1,3 +1,4 @@
+// app/page.js
 "use client";
 
 import { useState } from "react";
@@ -89,8 +90,8 @@ export default function Home() {
               Found a product that doesn’t look right?
             </h1>
             <p style={styles.heroSubtitle}>
-              Drop the product link below and we’ll analyze it for scams, fake quality,
-              and overpriced listings — <strong>free</strong>.
+              Drop the product link below and we’ll analyze it for scams, fake
+              quality, and overpriced listings — <strong>free</strong>.
             </p>
 
             <div style={styles.steps}>
@@ -201,9 +202,32 @@ export default function Home() {
 }
 
 const styles = {
-  container: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", background: "#f5f7fb", padding: 20, gap: 24 },
-  card: { background: "#fff", padding: 32, borderRadius: 16, width: "100%", maxWidth: 540, boxShadow: "0 10px 30px rgba(0,0,0,0.1)" },
-  cardFacts: { background: "#fff", padding: 40, borderRadius: 16, width: "100%", maxWidth: 540, boxShadow: "0 12px 36px rgba(0,0,0,0.12)", marginTop: 16 },
+  container: {
+    minHeight: "100vh",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    background: "#f5f7fb",
+    padding: 20,
+    gap: 24,
+  },
+  card: {
+    background: "#fff",
+    padding: 32,
+    borderRadius: 16,
+    width: "100%",
+    maxWidth: 540,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
+  },
+  cardFacts: {
+    background: "#fff",
+    padding: 40,
+    borderRadius: 16,
+    width: "100%",
+    maxWidth: 540,
+    boxShadow: "0 12px 36px rgba(0,0,0,0.12)",
+    marginTop: 16,
+  },
   instructions: { marginBottom: 28, textAlign: "center" },
   heroTitle: { fontSize: 28, fontWeight: 800, marginBottom: 10 },
   heroSubtitle: { fontSize: 15, color: "#555", marginBottom: 20 },
@@ -211,11 +235,26 @@ const styles = {
   step: { background: "#f9fafb", padding: 10, borderRadius: 8 },
   form: { display: "flex", flexDirection: "column", gap: 12 },
   input: { padding: 14, fontSize: 16, borderRadius: 10, border: "1px solid #ddd" },
-  button: { padding: 14, fontSize: 16, borderRadius: 10, border: "none", cursor: "pointer", background: "#4A6CF7", color: "#fff", fontWeight: 600 },
+  button: {
+    padding: 14,
+    fontSize: 16,
+    borderRadius: 10,
+    border: "none",
+    cursor: "pointer",
+    background: "#4A6CF7",
+    color: "#fff",
+    fontWeight: 600,
+  },
   helperText: { fontSize: 12, color: "#666", textAlign: "center" },
   factsTitle: { fontSize: 26, fontWeight: 700, marginBottom: 24, textAlign: "center" },
   factsList: { listStyle: "disc", paddingLeft: 24, fontSize: 16, color: "#333", lineHeight: 2 },
   error: { color: "red", marginTop: 12, textAlign: "center" },
-  verdict: (status) => ({ fontSize: 28, fontWeight: 900, color: OVERALL_COLORS[status] || "#111", textAlign: "center", marginBottom: 24 }),
+  verdict: (status) => ({
+    fontSize: 28,
+    fontWeight: 900,
+    color: OVERALL_COLORS[status] || "#111",
+    textAlign: "center",
+    marginBottom: 24,
+  }),
   section: { marginBottom: 18 },
 };
