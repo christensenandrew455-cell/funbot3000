@@ -46,150 +46,149 @@ async function gptKnowledge(prompt) {
   }
 }
 
-/* ===================== PUBLIC ===================== */
-
+/* ===================== TITLE CLASSIFICATION ===================== */
 
 /**
- * Brand + Product -> simplifiedProductTitle
+ * Raw title → { product, brand }
+ * Example:
+ * product: "earbuds"
+ * brand: "apple airpods"
  */
 export async function simplifyProductTitle({ brand, product }) {
   if (!product) return null;
 
-  const result = await gptKnowledge(`
-Simplify this ecommerce product title into a clean, searchable product name.
-
-Brand:
-${brand || "Unknown"}
+  const text = await gptKnowledge(`
+You are classifying an ecommerce product title.
 
 Original title:
 ${product}
 
-Rules:
-- Keep only the core product identity.
-- Remove promo words, shipping/sale phrases, emoji, and filler.
-- Keep important model/version terms when present.
-- Return ONE short line only.
-`);
+Known brand (if any):
+${brand || "unknown"}
 
-  if (!result) return null;
-
-  const simplified = result
-    .split("\n")[0]
-    .replace(/^[-*\d.)\s]+/, "")
-    .trim();
-
-  return simplified || null;
+Return JSON only:
+{
+  "product": "generic product category (e.g. earbuds, laptop, smartwatch)",
+  "brand": "recognizable product line or branded family name"
 }
 
+Rules:
+- Product must be generic (object type only).
+- Brand should reflect how people commonly refer to the product (e.g. 'apple airpods').
+- Remove marketing terms, condition notes, and model numbers unless they define the product family.
+- Use lowercase.
+`);
+
+  try {
+    const parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0]);
+    return {
+      product: parsed?.product || null,
+      brand: parsed?.brand || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/* ===================== SEARCH ===================== */
+
 /**
- * Seller → sellerData
+ * Seller → what people report about them
  */
 export async function getSellerData(seller) {
   if (!seller) return null;
 
   return gptSearch(`
-Find neutral, factual information about this seller.
+Search for information about this seller.
 
 Seller:
 ${seller}
 
-Focus on:
-- legitimacy
-- customer experience
-- fulfillment and support issues
+Summarize what is commonly mentioned about this seller online.
+Include anything notable that comes up.
 
-Return ONE short factual paragraph.
-No scoring. No conclusions.
+Return one short paragraph.
 `);
 }
 
 /**
- * Brand + Product → productData
+ * Brand + Product → what people say about the thing
  */
 export async function getProductData({ brand, product }) {
   if (!brand || !product) return null;
 
   return gptSearch(`
-Find neutral, independent information about this product.
+Search for information about this product.
 
-Brand and product:
+Product:
 ${brand} ${product}
 
-Focus on:
-- quality reputation
-- typical customer experience
-- value for price
+Summarize what people commonly mention about it online.
 
-Return ONE short factual paragraph.
-No scoring. No conclusions.
+Return one short paragraph.
 `);
 }
 
 /**
- * Brand + Product → brandPriceData (via search)
+ * Brand + Product → price mentions
  */
 export async function getBrandPriceData({ brand, product }) {
   if (!brand || !product) return null;
 
   return gptSearch(`
-Find the typical online price range for this product.
+Search for pricing information about this product.
 
-Brand and product:
+Product:
 ${brand} ${product}
 
-Focus on:
-- average price
-- common price range
+Summarize typical prices or price ranges mentioned online.
 
-Return ONE short factual paragraph.
-No conclusions.
+Return one short paragraph.
 `);
 }
 
 /**
- * Product → productPriceData (GPT knowledge only)
+ * Product type → general market pricing
  */
 export async function getProductPriceData(product) {
   if (!product) return null;
 
   return gptKnowledge(`
-Based on general market knowledge, estimate the typical price range
-for this type of product.
+Based on general market knowledge, what is a typical price range for this type of product?
 
-Product:
+Product type:
 ${product}
 
-Return ONE short factual paragraph.
-No conclusions.
+Return one short paragraph.
 `);
 }
 
 /**
- * Product → productProblemsData (GPT knowledge only)
+ * Product → commonly reported problems
  */
 export async function getProductProblemsData(product) {
   if (!product) return null;
 
-  return gptKnowledge(`
-List common problems or complaints associated with this type of product.
+  return gptSearch(`
+Search for discussions or reports about problems with this product.
 
 Product:
 ${product}
 
-Return ONE short factual paragraph.
-No conclusions.
+Summarize commonly mentioned issues if any appear.
+
+Return one short paragraph.
 `);
 }
 
 /**
- * Brand + Seller → brandSellerMatch (YES / NO)
+ * Brand vs Seller alignment
  */
 export async function getBrandSellerMatch({ brand, seller }) {
   if (!brand || !seller) return null;
 
   const result = await gptKnowledge(`
-Determine whether this seller is likely an official or legitimate seller
-of this brand.
+Is this seller likely an official or authorized seller of this product line?
 
 Brand:
 ${brand}
@@ -197,11 +196,10 @@ ${brand}
 Seller:
 ${seller}
 
-Return ONLY one word:
+Return only:
 YES or NO
 `);
 
   if (!result) return null;
-
   return result.trim().toUpperCase().startsWith("Y") ? "yes" : "no";
 }
