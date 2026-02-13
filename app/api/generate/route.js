@@ -37,10 +37,11 @@ function safeJSON(text, fallback = null) {
   }
 }
 
-function clampScore(value) {
+function clampScore(value, max = 5) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(5, Math.round(n)));
+  const hi = Number.isFinite(max) ? Math.max(0, Math.min(5, max)) : 5;
+  return Math.max(0, Math.min(hi, Math.round(n)));
 }
 
 function cleanReason(v) {
@@ -51,18 +52,34 @@ function cleanReason(v) {
 
 function fallbackReason(area) {
   if (area === "Website Trust")
-    return "Domain information was available, but no clear additional signals were provided. Rating is based on general knowledge only.";
+    return "Only basic domain information was available. The rating reflects limited signals.";
   if (area === "Seller Trust")
-    return "Seller context was limited or unclear. Rating is based on the provided seller/brand relationship and general knowledge only.";
+    return "Seller-specific evidence was limited or unclear. The rating reflects limited signals.";
   if (area === "Product Trust")
-    return "Product context was limited or unclear. Rating is based on the provided product information and general knowledge only.";
-  return "Information was limited. Rating is based on available context only.";
+    return "Brand/product-specific evidence was limited or unclear. The rating reflects limited signals.";
+  return "Information was limited. The rating reflects the available context.";
+}
+
+function hasNoClearInfo(v) {
+  return (
+    typeof v === "string" &&
+    v.trim().toLowerCase() === "no clear information found."
+  );
+}
+
+function isPresent(v) {
+  return !(v === null || v === undefined || String(v).trim() === "");
 }
 
 /* ===================== GPT DECISION: AREA RATER ===================== */
 /* GPT DECIDES SCORE + REASON USING ONLY THE PROVIDED INPUTS */
 
-async function rateArea({ area, inputs, strictFallbackScore = 3 }) {
+async function rateArea({
+  area,
+  inputs,
+  strictFallbackScore = 3,
+  maxScore = 5,
+}) {
   const entries = Object.entries(inputs || {}).map(([k, v]) => {
     const val =
       v === null || v === undefined || v === "" ? "null" : String(v).trim();
@@ -77,7 +94,9 @@ IMPORTANT RULES:
 - Use ONLY the inputs below plus general knowledge. Do not invent additional facts.
 - Be neutral and factual. No fear language and no absolutes.
 - Output MUST be JSON only, with the exact keys shown.
-- "reason" MUST be exactly TWO short factual sentences.
+- "reason" MUST be exactly TWO short sentences.
+- The reason MUST reference concrete inputs. Avoid vague phrases like "feedback is mixed" unless you specify what was mixed.
+- If any input indicates missing evidence (e.g., "No clear information found." or nulls), the reason MUST explicitly state what was missing.
 
 AREA: ${area}
 
@@ -87,16 +106,16 @@ ${entries.length ? entries.join("\n") : "- (none)"}
 Return JSON only:
 {
   "score": 1-5 integer,
-  "reason": "Two short factual sentences."
+  "reason": "Two short sentences that cite the inputs."
 }
 `);
 
   const parsed = safeJSON(text, null);
-  const score = clampScore(parsed?.score);
+  const score = clampScore(parsed?.score, maxScore);
   const reason = cleanReason(parsed?.reason);
 
   return {
-    score: score || strictFallbackScore,
+    score: score || Math.min(strictFallbackScore, maxScore),
     reason: reason || fallbackReason(area),
   };
 }
@@ -111,7 +130,8 @@ IMPORTANT RULES:
 - Decide status + score yourself.
 - Be neutral and factual. No fear language and no absolutes.
 - Output MUST be JSON only with the exact keys shown.
-- "reason" MUST be exactly TWO short factual sentences.
+- "reason" MUST be exactly TWO short sentences.
+- Do NOT restate the numeric scores in the reason. Explain the top 1–2 drivers instead.
 - Status MUST be one of: "scam", "untrustworthy", "overpriced", "good product"
 
 TITLE: ${title || "unknown"}
@@ -142,7 +162,7 @@ Return JSON only:
     meaning: cleanReason(parsed?.meaning) || "Mixed signals",
     reason:
       cleanReason(parsed?.reason) ||
-      "Component signals were mixed. The overall rating reflects the available evidence.",
+      "Signals were mixed across the website, seller, and product context. The overall rating reflects the strongest available drivers.",
   };
 }
 
@@ -159,6 +179,17 @@ async function buildAiResult(extracted, analyses) {
 
   const title = extracted.brandSimple || extracted.product || "Unknown Product";
 
+  // Evidence flags (used to force the model to acknowledge missing info)
+  const evidence = {
+    hasSellerEvidence:
+      isPresent(extracted.seller) && !hasNoClearInfo(sellerData || ""),
+    hasBrandEvidence: !hasNoClearInfo(productData || ""),
+    hasBrandProblemsEvidence: !hasNoClearInfo(productProblemsData || ""),
+    hasPriceEvidence: isPresent(extracted.price),
+    hasBrandPriceEvidence: !hasNoClearInfo(brandPriceData || ""),
+    hasCategoryPriceEvidence: !hasNoClearInfo(productPriceData || ""),
+  };
+
   // Website rated from: domain + GPT general knowledge
   const websiteTrust = await rateArea({
     area: "Website Trust",
@@ -166,29 +197,45 @@ async function buildAiResult(extracted, analyses) {
       domain: extracted.domain ?? null,
     },
     strictFallbackScore: 3,
+    maxScore: 5,
   });
 
   // Seller rated from: sellerMatchesBrand + sellerData + price against brandPriceData
+  // If we have no seller evidence at all, cap the score lower.
+  const sellerMaxScore = evidence.hasSellerEvidence ? 5 : 2;
+
   const sellerTrust = await rateArea({
     area: "Seller Trust",
     inputs: {
+      seller: extracted.seller ?? null,
       sellerMatchesBrand: extracted.sellerMatchesBrand ?? "no",
       sellerData: sellerData ?? null,
       price: extracted.price ?? null,
       brandPriceData: brandPriceData ?? null,
+      sellerEvidenceFound: evidence.hasSellerEvidence ? "yes" : "no",
     },
     strictFallbackScore: 3,
+    maxScore: sellerMaxScore,
   });
 
   // Product rated from: productData + productPriceData + productProblemsData
+  // If brand-specific info is missing, treat as unknown brand and cap score.
+  const productHasBrandSignals =
+    evidence.hasBrandEvidence || evidence.hasBrandProblemsEvidence;
+  const productMaxScore = productHasBrandSignals ? 5 : 2;
+
   const productTrust = await rateArea({
     area: "Product Trust",
     inputs: {
+      brandSimple: extracted.brandSimple ?? null,
+      product: extracted.product ?? null,
       productData: productData ?? null,
       productPriceData: productPriceData ?? null,
       productProblemsData: productProblemsData ?? null,
+      brandEvidenceFound: productHasBrandSignals ? "yes" : "no",
     },
     strictFallbackScore: 3,
+    maxScore: productMaxScore,
   });
 
   // Overall decided by GPT from component results
