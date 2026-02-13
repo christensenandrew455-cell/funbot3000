@@ -52,11 +52,11 @@ function cleanReason(v) {
 
 function fallbackReason(area) {
   if (area === "Website Trust")
-    return "Only basic domain information was available. The rating reflects limited signals.";
+    return "This is a well-known shopping site with standard checkout and buyer protections. No additional site-specific issues were identified from the available inputs.";
   if (area === "Seller Trust")
-    return "Seller-specific evidence was limited or unclear. The rating reflects limited signals.";
+    return "There was not enough seller-specific information to verify reputation. The rating reflects limited seller evidence from the available inputs.";
   if (area === "Product Trust")
-    return "Brand/product-specific evidence was limited or unclear. The rating reflects limited signals.";
+    return "There was not enough brand-specific information to verify long-term quality. The rating reflects limited product evidence from the available inputs.";
   return "Information was limited. The rating reflects the available context.";
 }
 
@@ -95,8 +95,10 @@ IMPORTANT RULES:
 - Be neutral and factual. No fear language and no absolutes.
 - Output MUST be JSON only, with the exact keys shown.
 - "reason" MUST be exactly TWO short sentences.
-- The reason MUST reference concrete inputs. Avoid vague phrases like "feedback is mixed" unless you specify what was mixed.
-- If any input indicates missing evidence (e.g., "No clear information found." or nulls), the reason MUST explicitly state what was missing.
+- Write the reason like you're explaining facts to a shopper (plain English).
+- Do NOT mention input field names (e.g., do not say "sellerData", "productPriceData", "brandPriceData", etc.).
+- Avoid vague phrases like "feedback is mixed" unless you state what the mixed points are.
+- If evidence is missing (nulls or "No clear information found."), explicitly say what could not be verified.
 
 AREA: ${area}
 
@@ -106,7 +108,7 @@ ${entries.length ? entries.join("\n") : "- (none)"}
 Return JSON only:
 {
   "score": 1-5 integer,
-  "reason": "Two short sentences that cite the inputs."
+  "reason": "Two short sentences in plain English."
 }
 `);
 
@@ -132,6 +134,7 @@ IMPORTANT RULES:
 - Output MUST be JSON only with the exact keys shown.
 - "reason" MUST be exactly TWO short sentences.
 - Do NOT restate the numeric scores in the reason. Explain the top 1–2 drivers instead.
+- Write in plain English for a shopper.
 - Status MUST be one of: "scam", "untrustworthy", "overpriced", "good product"
 
 TITLE: ${title || "unknown"}
@@ -173,7 +176,7 @@ async function buildAiResult(extracted, analyses) {
     sellerData,
     productData,
     brandPriceData,
-    productPriceData,
+    productPriceData, // kept in analyses for other uses, but NOT fed into product trust
     productProblemsData,
   } = analyses || {};
 
@@ -183,10 +186,10 @@ async function buildAiResult(extracted, analyses) {
   const evidence = {
     hasSellerEvidence:
       isPresent(extracted.seller) && !hasNoClearInfo(sellerData || ""),
-    hasBrandEvidence: !hasNoClearInfo(productData || ""),
-    hasBrandProblemsEvidence: !hasNoClearInfo(productProblemsData || ""),
     hasPriceEvidence: isPresent(extracted.price),
     hasBrandPriceEvidence: !hasNoClearInfo(brandPriceData || ""),
+    hasBrandEvidence: !hasNoClearInfo(productData || ""),
+    hasBrandProblemsEvidence: !hasNoClearInfo(productProblemsData || ""),
     hasCategoryPriceEvidence: !hasNoClearInfo(productPriceData || ""),
   };
 
@@ -200,7 +203,7 @@ async function buildAiResult(extracted, analyses) {
     maxScore: 5,
   });
 
-  // Seller rated from: sellerMatchesBrand + sellerData + price against brandPriceData
+  // Seller Trust: ONLY seller-specific signals (+ optional pricing vs the brand's typical pricing)
   // If we have no seller evidence at all, cap the score lower.
   const sellerMaxScore = evidence.hasSellerEvidence ? 5 : 2;
 
@@ -209,16 +212,18 @@ async function buildAiResult(extracted, analyses) {
     inputs: {
       seller: extracted.seller ?? null,
       sellerMatchesBrand: extracted.sellerMatchesBrand ?? "no",
-      sellerData: sellerData ?? null,
-      price: extracted.price ?? null,
-      brandPriceData: brandPriceData ?? null,
+      sellerInfo: sellerData ?? null,
+      listingPrice: extracted.price ?? null,
+      typicalBrandPrice: brandPriceData ?? null,
       sellerEvidenceFound: evidence.hasSellerEvidence ? "yes" : "no",
+      priceEvidenceFound:
+        evidence.hasPriceEvidence && evidence.hasBrandPriceEvidence ? "yes" : "no",
     },
     strictFallbackScore: 3,
     maxScore: sellerMaxScore,
   });
 
-  // Product rated from: productData + productPriceData + productProblemsData
+  // Product Trust: ONLY brand/product quality signals (NO category-price data, no seller data)
   // If brand-specific info is missing, treat as unknown brand and cap score.
   const productHasBrandSignals =
     evidence.hasBrandEvidence || evidence.hasBrandProblemsEvidence;
@@ -227,11 +232,10 @@ async function buildAiResult(extracted, analyses) {
   const productTrust = await rateArea({
     area: "Product Trust",
     inputs: {
-      brandSimple: extracted.brandSimple ?? null,
-      product: extracted.product ?? null,
-      productData: productData ?? null,
-      productPriceData: productPriceData ?? null,
-      productProblemsData: productProblemsData ?? null,
+      brand: extracted.brandSimple ?? null,
+      productType: extracted.product ?? null,
+      brandOverview: productData ?? null,
+      commonComplaints: productProblemsData ?? null,
       brandEvidenceFound: productHasBrandSignals ? "yes" : "no",
     },
     strictFallbackScore: 3,
