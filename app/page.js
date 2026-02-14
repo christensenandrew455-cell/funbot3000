@@ -3,6 +3,49 @@
 
 import { useMemo } from "react";
 
+function LogoMark({ size = 22 }) {
+  // Simple “A + magnifying glass” mark that reads well small (header + future favicon reference)
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 64 64"
+      role="img"
+      aria-label="Alitrite"
+      style={{ display: "block" }}
+    >
+      {/* A */}
+      <path
+        d="M30 10 L12 54 H20 L24 44 H40 L44 54 H52 L34 10 Z M27 36 L32 22 L37 36 Z"
+        fill="#2563eb"
+      />
+      {/* Magnifying glass */}
+      <circle
+        cx="45"
+        cy="23"
+        r="10"
+        fill="none"
+        stroke="#0f172a"
+        strokeWidth="4"
+      />
+      <path
+        d="M52 30 L60 38"
+        stroke="#0f172a"
+        strokeWidth="4"
+        strokeLinecap="round"
+      />
+      {/* “Text lines” inside lens */}
+      <path
+        d="M39 22 H51 M39 26 H49 M39 18 H50"
+        stroke="#0f172a"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        opacity="0.85"
+      />
+    </svg>
+  );
+}
+
 export default function HomePage() {
   const year = useMemo(() => new Date().getFullYear(), []);
 
@@ -10,7 +53,12 @@ export default function HomePage() {
     <div style={s.page}>
       <header style={s.header}>
         <div style={s.headerInner}>
-          <div style={s.brand}>Alitrite</div>
+          <div style={s.brandWrap}>
+            <span style={s.logo}>
+              <LogoMark size={22} />
+            </span>
+            <div style={s.brand}>Alitrite</div>
+          </div>
 
           <nav style={s.nav}>
             <a style={s.navLink} href="#how">
@@ -19,15 +67,17 @@ export default function HomePage() {
             <a style={s.navLink} href="#ratings">
               Ratings
             </a>
-            {/* Keep Privacy accessible in the top nav */}
-            <a style={s.navLink} href="/privacy">
+            {/* Privacy in header should jump to the privacy section on THIS page */}
+            <a style={s.navLink} href="#privacy">
               Privacy
             </a>
             <a style={s.navLink} href="#faq">
               FAQ
             </a>
+
+            {/* Header CTA label should be the site name (still links to the tool page) */}
             <a style={{ ...s.navLink, ...s.navCTA }} href="/droplink">
-              Check a product →
+              Alitrite →
             </a>
           </nav>
         </div>
@@ -325,6 +375,9 @@ export default function HomePage() {
             <a style={s.footerLink} href="/droplink">
               DropLink
             </a>
+            <a style={s.footerLink} href="#privacy">
+              Privacy
+            </a>
             <a style={s.footerLink} href="/privacy">
               Privacy Policy
             </a>
@@ -361,7 +414,22 @@ const s = {
     justifyContent: "space-between",
     gap: 12,
   },
+  brandWrap: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    minWidth: 140,
+  },
+  logo: {
+    width: 22,
+    height: 22,
+    borderRadius: 8,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   brand: { fontWeight: 900, letterSpacing: 0.2, fontSize: 18 },
+
   nav: {
     display: "flex",
     gap: 10,
@@ -590,7 +658,17 @@ const s = {
     flexWrap: "wrap",
   },
   footerLeft: { fontWeight: 950, lineHeight: 1.3 },
-  footerMicro: { marginTop: 6, fontSize: 12, color: "#64748b", fontWeight: 600 },
+  footerMicro: {
+    marginTop: 6,
+    fontSize: 12,
+    color: "#64748b",
+    fontWeight: 600,
+  },
   footerRight: { display: "flex", gap: 12, flexWrap: "wrap" },
-  footerLink: { color: "#334155", textDecoration: "none", fontWeight: 850, fontSize: 13 },
+  footerLink: {
+    color: "#334155",
+    textDecoration: "none",
+    fontWeight: 850,
+    fontSize: 13,
+  },
 };
