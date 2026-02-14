@@ -53,14 +53,14 @@ export default function HomePage() {
     <div style={s.page}>
       <header style={s.header}>
         <div style={s.headerInner}>
-          <div style={s.brandWrap}>
+          <a href="/" style={s.brandWrap} aria-label="Alitrite Home">
             <span style={s.logo}>
               <LogoMark size={22} />
             </span>
             <div style={s.brand}>Alitrite</div>
-          </div>
+          </a>
 
-          <nav style={s.nav}>
+          <nav style={s.nav} aria-label="Primary">
             <a style={s.navLink} href="#how">
               How it works
             </a>
@@ -77,7 +77,7 @@ export default function HomePage() {
 
             {/* Header CTA label should be the site name (still links to the tool page) */}
             <a style={{ ...s.navLink, ...s.navCTA }} href="/droplink">
-              Alitrite →
+              Alitrite Tool →
             </a>
           </nav>
         </div>
@@ -111,13 +111,14 @@ export default function HomePage() {
 
               <div style={s.trustRow}>
                 <div style={s.trustPill}>Free</div>
-                <div style={s.trustPill}>Unlimited checks</div>
+                <div style={s.trustPill}>No account</div>
                 <div style={s.trustPill}>Amazon links only (for now)</div>
               </div>
 
               <p style={s.micro}>
-                AI can make mistakes. Alitrite provides guidance, not guarantees.
-                Always verify critical details before purchasing.
+                Not affiliated with Amazon. AI can make mistakes. Alitrite
+                provides guidance, not guarantees — verify critical details
+                before purchasing.
               </p>
             </div>
 
@@ -185,8 +186,8 @@ export default function HomePage() {
             <div style={s.featureCard}>
               <div style={s.featureTitle}>1) Paste the link</div>
               <div style={s.featureText}>
-                Copy the full Amazon product URL and paste it into the DropLink
-                page.
+                Copy the full Amazon product URL and paste it into the Alitrite
+                Tool page.
               </div>
             </div>
             <div style={s.featureCard}>
@@ -368,12 +369,13 @@ export default function HomePage() {
           <div style={s.footerLeft}>
             {year} © Alitrite
             <div style={s.footerMicro}>
-              AI-assisted guidance only — verify critical details.
+              Not affiliated with Amazon. AI-assisted guidance only — verify
+              critical details.
             </div>
           </div>
           <div style={s.footerRight}>
             <a style={s.footerLink} href="/droplink">
-              DropLink
+              Alitrite Tool
             </a>
             <a style={s.footerLink} href="#privacy">
               Privacy
@@ -419,6 +421,8 @@ const s = {
     alignItems: "center",
     gap: 10,
     minWidth: 140,
+    textDecoration: "none",
+    color: "inherit",
   },
   logo: {
     width: 22,
