@@ -19,6 +19,10 @@ export default function HomePage() {
             <a style={s.navLink} href="#ratings">
               Ratings
             </a>
+            {/* Keep Privacy accessible in the top nav */}
+            <a style={s.navLink} href="/privacy">
+              Privacy
+            </a>
             <a style={s.navLink} href="#faq">
               FAQ
             </a>
@@ -238,17 +242,18 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* PRIVACY (short + link out) */}
+        {/* PRIVACY (short summary + learn more) */}
         <section id="privacy" style={s.section}>
           <h2 style={s.h2}>Privacy</h2>
           <p style={s.p}>
             No account required to run checks. We don’t need your personal info
-            to analyze a product link.
+            to analyze a product link. If we use affiliate links (like Amazon),
+            Amazon may use cookies to track purchases for commission attribution.
           </p>
 
           <div style={s.privacyRow}>
             <a href="/privacy" style={s.privacyBtn}>
-              Learn more →
+              Read the full Privacy Policy →
             </a>
           </div>
         </section>
