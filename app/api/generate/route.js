@@ -71,8 +71,65 @@ function isPresent(v) {
   return !(v === null || v === undefined || String(v).trim() === "");
 }
 
+/* ===================== AMAZON LINKING (AFFILIATE) ===================== */
+/**
+ * Clean affiliate link format: https://www.amazon.com/dp/ASIN/ref=nosim?tag=YOURTAG
+ * Amazon documents this exact pattern. :contentReference[oaicite:2]{index=2}
+ */
+
+function getAssociateTag() {
+  // Example: "yourtag-20"
+  return (process.env.AMAZON_ASSOCIATE_TAG || "").trim() || null;
+}
+
+function extractASINFromUrl(urlString) {
+  try {
+    const u = new URL(urlString);
+    const path = u.pathname || "";
+
+    // Common patterns:
+    // /dp/B08.../
+    // /gp/product/B08.../
+    // /gp/aw/d/B08.../
+    const m =
+      path.match(/\/dp\/([A-Z0-9]{10})(?:[/?]|$)/i) ||
+      path.match(/\/gp\/product\/([A-Z0-9]{10})(?:[/?]|$)/i) ||
+      path.match(/\/gp\/aw\/d\/([A-Z0-9]{10})(?:[/?]|$)/i);
+
+    if (m && m[1]) return m[1].toUpperCase();
+
+    // Some links include ASIN in query (rare)
+    const asinQ = u.searchParams.get("asin") || u.searchParams.get("ASIN");
+    if (asinQ && /^[A-Z0-9]{10}$/i.test(asinQ)) return asinQ.toUpperCase();
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function buildAmazonDpLink({ asin, marketplaceHost = "www.amazon.com" }) {
+  if (!asin) return null;
+  const tag = getAssociateTag();
+
+  // If you haven't set the tag yet, still return clean dp link (no tag)
+  const base = `https://${marketplaceHost}/dp/${encodeURIComponent(asin)}/ref=nosim`;
+  if (!tag) return base;
+  return `${base}?tag=${encodeURIComponent(tag)}`;
+}
+
+function buildAmazonSearchLink({ query, marketplaceHost = "www.amazon.com" }) {
+  if (!query) return null;
+  const tag = getAssociateTag();
+
+  // Search links can work, but attribution is best with direct /dp/ links.
+  // We still provide it as a fallback when we don't have ASINs.
+  const base = `https://${marketplaceHost}/s?k=${encodeURIComponent(query)}`;
+  if (!tag) return base;
+  return `${base}&tag=${encodeURIComponent(tag)}`;
+}
+
 /* ===================== GPT DECISION: AREA RATER ===================== */
-/* GPT DECIDES SCORE + REASON USING ONLY THE PROVIDED INPUTS */
 
 async function rateArea({
   area,
@@ -96,8 +153,7 @@ IMPORTANT RULES:
 - Output MUST be JSON only, with the exact keys shown.
 - "reason" MUST be exactly TWO short sentences.
 - Write the reason like you're explaining facts to a shopper (plain English).
-- Do NOT mention input field names (e.g., do not say "sellerData", "productPriceData", "brandPriceData", etc.).
-- Avoid vague phrases like "feedback is mixed" unless you state what the mixed points are.
+- Do NOT mention input field names.
 - If evidence is missing (nulls or "No clear information found."), explicitly say what could not be verified.
 
 AREA: ${area}
@@ -155,7 +211,8 @@ Return JSON only:
 
   const parsed = safeJSON(text, null);
 
-  const statusRaw = typeof parsed?.status === "string" ? parsed.status.trim() : "";
+  const statusRaw =
+    typeof parsed?.status === "string" ? parsed.status.trim() : "";
   const allowed = new Set(["scam", "untrustworthy", "overpriced", "good product"]);
   const status = allowed.has(statusRaw) ? statusRaw : "good product";
 
@@ -169,20 +226,98 @@ Return JSON only:
   };
 }
 
+/* ===================== SUGGESTED PRODUCTS (3-TIER) ===================== */
+/**
+ * This returns a structured 3-option block for the UI:
+ * - low / mid / high
+ * - each has: title, link, displayPrice (optional), valueScore (0-100), badge, tagline
+ *
+ * Right now (no PA-API), we generate links + persuasive scaffolding.
+ * Later, you can replace the placeholder pricing with real prices (PA-API Offers.Listings.Price). :contentReference[oaicite:3]{index=3}
+ */
+
+function valueScoreFromTier(tier) {
+  // Your “value bar” needs a number. Higher tier = higher perceived value-for-price.
+  // Keep it consistent; don’t pretend it’s a real computed market price without PA-API.
+  if (tier === "low") return 72;
+  if (tier === "mid") return 84;
+  return 93; // high
+}
+
+function tierMeta(tier) {
+  if (tier === "low") {
+    return {
+      tier,
+      label: "Budget pick",
+      badge: "GOOD VALUE",
+      tagline:
+        "Lowest upfront cost while still aiming for a solid value-per-dollar.",
+    };
+  }
+  if (tier === "mid") {
+    return {
+      tier,
+      label: "Best bang for buck",
+      badge: "BEST VALUE",
+      tagline:
+        "The balanced option: strong value without jumping to the highest price.",
+    };
+  }
+  return {
+    tier,
+    label: "Premium value",
+    badge: "TOP VALUE",
+    tagline:
+      "Higher price, but typically the strongest overall value if you want the best option.",
+  };
+}
+
+function buildSuggested({ brandSimple, productType, marketplaceHost }) {
+  const baseQuery = [brandSimple, productType].filter(Boolean).join(" ").trim();
+  const q = baseQuery || "amazon product";
+
+  // If you later get real ASINs from PA-API, replace these with dp links.
+  const tiers = ["low", "mid", "high"];
+
+  return tiers.map((tier) => {
+    const meta = tierMeta(tier);
+
+    // We bias search query terms slightly by tier (this is *not* pricing).
+    // You can tweak these keywords later.
+    const tierQuery =
+      tier === "low"
+        ? `${q} best value`
+        : tier === "mid"
+          ? `${q} top rated value`
+          : `${q} premium best`;
+
+    return {
+      ...meta,
+      title: `${meta.label}: ${q}`,
+      link:
+        buildAmazonSearchLink({ query: tierQuery, marketplaceHost }) ||
+        buildAmazonSearchLink({ query: q, marketplaceHost }),
+      displayPrice: null, // populated later with PA-API
+      valueScore: valueScoreFromTier(tier),
+      valueNote:
+        "Value score is a quick guide. Actual pricing and availability are on Amazon.",
+    };
+  });
+}
+
 /* ===================== CORE LOGIC ===================== */
 
-async function buildAiResult(extracted, analyses) {
+async function buildAiResult(extracted, analyses, originalUrl) {
   const {
     sellerData,
     productData,
     brandPriceData,
-    productPriceData, // kept in analyses for other uses, but NOT fed into product trust
+    productPriceData,
     productProblemsData,
   } = analyses || {};
 
   const title = extracted.brandSimple || extracted.product || "Unknown Product";
 
-  // Evidence flags (used to force the model to acknowledge missing info)
   const evidence = {
     hasSellerEvidence:
       isPresent(extracted.seller) && !hasNoClearInfo(sellerData || ""),
@@ -193,7 +328,6 @@ async function buildAiResult(extracted, analyses) {
     hasCategoryPriceEvidence: !hasNoClearInfo(productPriceData || ""),
   };
 
-  // Website rated from: domain + GPT general knowledge
   const websiteTrust = await rateArea({
     area: "Website Trust",
     inputs: {
@@ -203,8 +337,6 @@ async function buildAiResult(extracted, analyses) {
     maxScore: 5,
   });
 
-  // Seller Trust: ONLY seller-specific signals (+ optional pricing vs the brand's typical pricing)
-  // If we have no seller evidence at all, cap the score lower.
   const sellerMaxScore = evidence.hasSellerEvidence ? 5 : 2;
 
   const sellerTrust = await rateArea({
@@ -223,8 +355,6 @@ async function buildAiResult(extracted, analyses) {
     maxScore: sellerMaxScore,
   });
 
-  // Product Trust: ONLY brand/product quality signals (NO category-price data, no seller data)
-  // If brand-specific info is missing, treat as unknown brand and cap score.
   const productHasBrandSignals =
     evidence.hasBrandEvidence || evidence.hasBrandProblemsEvidence;
   const productMaxScore = productHasBrandSignals ? 5 : 2;
@@ -242,13 +372,31 @@ async function buildAiResult(extracted, analyses) {
     maxScore: productMaxScore,
   });
 
-  // Overall decided by GPT from component results
   const overall = await rateOverall({
     title,
     websiteTrust,
     sellerTrust,
     productTrust,
   });
+
+  // Marketplace host (keep simple; your app currently targets .com)
+  const marketplaceHost = "www.amazon.com";
+
+  // Primary affiliate link for "your product" (best for attribution)
+  const asin = extractASINFromUrl(originalUrl);
+  const primaryLink =
+    buildAmazonDpLink({ asin, marketplaceHost }) ||
+    buildAmazonSearchLink({ query: title, marketplaceHost });
+
+  // Suggested 3-tier alternatives ONLY when NOT good product
+  const suggested =
+    overall.status === "good product"
+      ? []
+      : buildSuggested({
+          brandSimple: extracted.brandSimple,
+          productType: extracted.product,
+          marketplaceHost,
+        });
 
   return {
     status: overall.status,
@@ -260,6 +408,26 @@ async function buildAiResult(extracted, analyses) {
       score: overall.score,
       meaning: overall.meaning,
       reason: overall.reason,
+    },
+
+    // NEW: monetization/link payload for the UI
+    links: {
+      primary: {
+        label: overall.status === "good product" ? "Your product" : "View product",
+        cta:
+          overall.status === "good product"
+            ? "Go back to your product →"
+            : "View product details →",
+        href: primaryLink,
+        asin: asin || null,
+      },
+      suggestedLabel:
+        overall.status === "good product" ? null : "Your best-value options",
+      suggestedNote:
+        overall.status === "good product"
+          ? null
+          : "These options are picked to cover a low, mid, and high price range while aiming for strong value-for-price. Availability and pricing are shown on Amazon.",
+      suggested,
     },
   };
 }
@@ -294,7 +462,7 @@ export async function POST(request) {
       );
     }
 
-    const aiResult = await buildAiResult(extracted, analyses);
+    const aiResult = await buildAiResult(extracted, analyses, url);
 
     return Response.json({ aiResult, extracted });
   } catch {
