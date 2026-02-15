@@ -1,7 +1,7 @@
 // app/droplink/page.js
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 const OVERALL_LABELS = {
   scam: "SCAM",
@@ -83,6 +83,7 @@ function isAmazonProductUrl(urlString) {
       path.includes("/gp/product/") ||
       path.includes("/gp/aw/d/");
 
+    // Keep permissive for Amazon, but still “product-first”.
     return looksLikeProduct || true;
   } catch {
     return false;
@@ -105,20 +106,24 @@ function Stars({ score }) {
   );
 }
 
-function ValueBar({ valueScore }) {
+function MeterBar({ label, score, left = "Low", right = "High" }) {
   const v =
-    typeof valueScore === "number" && Number.isFinite(valueScore)
-      ? Math.max(0, Math.min(100, Math.round(valueScore)))
+    typeof score === "number" && Number.isFinite(score)
+      ? Math.max(0, Math.min(100, Math.round(score)))
       : 0;
 
   return (
-    <div style={styles.valueWrap} aria-label={`Value score ${v} out of 100`}>
-      <div style={styles.valueTop}>
-        <span style={styles.valueLabel}>Value</span>
-        <span style={styles.valueNum}>{v}/100</span>
+    <div style={styles.meterWrap} aria-label={`${label} score ${v} out of 100`}>
+      <div style={styles.meterTop}>
+        <span style={styles.meterLabel}>{label}</span>
+        <span style={styles.meterNum}>{v}/100</span>
       </div>
-      <div style={styles.valueTrack}>
-        <div style={{ ...styles.valueFill, width: `${v}%` }} />
+      <div style={styles.meterTrack}>
+        <div style={{ ...styles.meterFill, width: `${v}%` }} />
+      </div>
+      <div style={styles.meterEnds}>
+        <span style={styles.meterEndText}>{left}</span>
+        <span style={styles.meterEndText}>{right}</span>
       </div>
     </div>
   );
@@ -140,6 +145,8 @@ function ExternalCardLink({ href, children, style }) {
 
 export default function DropLinkPage() {
   const year = useMemo(() => new Date().getFullYear(), []);
+  const linkBottomRef = useRef(null);
+
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -176,7 +183,7 @@ export default function DropLinkPage() {
       setScreenshot(data.base64 || null);
       setResult(data.aiResult || null);
 
-      // Nudge scroll so they see the CTA card
+      // Nudge scroll so they see the verdict + summary first
       window.requestAnimationFrame(() => {
         window.scrollTo({ top: 0, behavior: "smooth" });
       });
@@ -188,10 +195,20 @@ export default function DropLinkPage() {
     }
   }
 
+  function jumpToBottomLink() {
+    const el = linkBottomRef.current;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   const hasResults = !!result;
   const primary = result?.links?.primary || null;
   const suggested = Array.isArray(result?.links?.suggested) ? result.links.suggested : [];
   const showSuggested = hasResults && result?.status !== "good product" && suggested.length > 0;
+
+  const listingPrice = result?.pricing?.listingPrice || null;
+  const typicalBrandPrice = result?.pricing?.typicalBrandPrice || null;
+  const typicalCategoryPrice = result?.pricing?.typicalCategoryPrice || null;
 
   return (
     <div style={styles.container}>
@@ -274,29 +291,52 @@ export default function DropLinkPage() {
 
             <div style={styles.titleRow}>
               <h3 style={{ margin: 0 }}>{result.title || "Product Title Not Detected"}</h3>
-              <div style={styles.scrollCue}>Scroll down to see full results ↓</div>
+
+              <div style={styles.titleRowRight}>
+                <button
+                  type="button"
+                  onClick={jumpToBottomLink}
+                  style={styles.jumpButton}
+                  aria-label="Jump to product link"
+                >
+                  Jump to link ↓
+                </button>
+                <div style={styles.scrollCue}>Scroll for details ↓</div>
+              </div>
             </div>
 
-            {/* PRIMARY CTA CARD (always) */}
-            {primary?.href && (
-              <ExternalCardLink href={primary.href} style={styles.primaryCard}>
-                <div style={styles.primaryCardTop}>
-                  <div style={styles.primaryEyebrow}>
-                    {result.status === "good product" ? "Your product" : "Your product link"}
-                  </div>
-                  <div style={styles.primaryCtaText}>
-                    {result.status === "good product"
-                      ? "Go back to your product →"
-                      : "Open your product on Amazon →"}
-                  </div>
-                  <div style={styles.primarySub}>
-                    This link opens Amazon in a new tab.
+            {/* “Explain the why” — short + obvious */}
+            <div style={styles.explainBox}>
+              <div style={styles.explainTitle}>How to read this (quick)</div>
+              <div style={styles.explainGrid}>
+                <div style={styles.explainItem}>
+                  <div style={styles.explainKey}>Website Trust</div>
+                  <div style={styles.explainVal}>
+                    Is the checkout/platform generally legitimate and standard?
                   </div>
                 </div>
-              </ExternalCardLink>
-            )}
+                <div style={styles.explainItem}>
+                  <div style={styles.explainKey}>Seller Trust</div>
+                  <div style={styles.explainVal}>
+                    Can the seller’s reputation and storefront legitimacy be verified?
+                  </div>
+                </div>
+                <div style={styles.explainItem}>
+                  <div style={styles.explainKey}>Product Trust</div>
+                  <div style={styles.explainVal}>
+                    Is there credible evidence this brand/product line holds up over time?
+                  </div>
+                </div>
+                <div style={styles.explainItem}>
+                  <div style={styles.explainKey}>Overall Rating</div>
+                  <div style={styles.explainVal}>
+                    A summary that won’t say “GOOD PRODUCT” unless seller + product trust are strong.
+                  </div>
+                </div>
+              </div>
+            </div>
 
-            {/* Screenshot can sit near top, but keep CTA above it */}
+            {/* Screenshot can sit near top */}
             {screenshot && (
               <div style={{ margin: "18px 0 0", textAlign: "center" }}>
                 <h4 style={{ margin: "0 0 10px" }}>Product Screenshot</h4>
@@ -312,6 +352,29 @@ export default function DropLinkPage() {
                 />
               </div>
             )}
+
+            {/* PRICE / VALUE SNAPSHOT (obvious, answers “why”) */}
+            <div style={styles.snapshotRow}>
+              <div style={styles.snapshotCard}>
+                <div style={styles.snapshotLabel}>Listing price</div>
+                <div style={styles.snapshotValue}>
+                  {listingPrice ? listingPrice : "Not found on page"}
+                </div>
+                <div style={styles.snapshotHint}>
+                  This is the price pulled from the listing page (when available).
+                </div>
+              </div>
+
+              <div style={styles.snapshotCard}>
+                <div style={styles.snapshotLabel}>Typical price reference</div>
+                <div style={styles.snapshotValueSmall}>
+                  {typicalBrandPrice || typicalCategoryPrice || "No clear reference found."}
+                </div>
+                <div style={styles.snapshotHint}>
+                  Used as context to decide “BAD VALUE” vs “GOOD PRODUCT.”
+                </div>
+              </div>
+            </div>
 
             {/* DETAILS */}
             <div style={styles.section}>
@@ -346,61 +409,89 @@ export default function DropLinkPage() {
               </div>
             </div>
 
-            {/* SUGGESTED (ONLY if not good product) — placed at BOTTOM */}
-            {showSuggested && (
-              <div style={styles.suggestedWrap}>
-                <div style={styles.suggestedHeader}>
-                  <h3 style={{ margin: 0 }}>
-                    {result?.links?.suggestedLabel || "Your best-value options"}
-                  </h3>
-                  <div style={styles.suggestedSub}>
-                    {result?.links?.suggestedNote ||
-                      "Three alternatives across a low, mid, and high price range — optimized for value."}
-                  </div>
-                </div>
-
-                <div style={styles.suggestedGrid}>
-                  {suggested.slice(0, 3).map((item, idx) => (
-                    <ExternalCardLink key={idx} href={item?.link} style={styles.suggestedCard}>
-                      <div style={styles.suggestedTop}>
-                        <div style={styles.badge}>{item?.badge || "VALUE"}</div>
-                        <div style={styles.tier}>{item?.label || item?.tier}</div>
-                      </div>
-
-                      <div style={styles.suggestedTitle}>
-                        {item?.title || "Recommended option"}
-                      </div>
-
-                      {/* Price placeholder (only show if we have it later) */}
-                      {item?.displayPrice ? (
-                        <div style={styles.priceRow}>
-                          <span style={styles.price}>{item.displayPrice}</span>
-                        </div>
-                      ) : (
-                        <div style={styles.priceRow}>
-                          <span style={styles.priceMuted}>Price shown on Amazon</span>
-                        </div>
-                      )}
-
-                      <ValueBar valueScore={item?.valueScore} />
-
-                      <div style={styles.tagline}>
-                        {item?.tagline ||
-                          "Strong value for the price. Click to see the current deal on Amazon."}
-                      </div>
-
-                      <div style={styles.openLine}>Open on Amazon →</div>
-                    </ExternalCardLink>
-                  ))}
-                </div>
-
-                <div style={styles.equivalencyNote}>
-                  These options are meant to be equivalent choices by <strong>value-for-price</strong>.
-                  Higher-priced picks usually include more features or stronger performance, but all
-                  three aim to be “worth it” for their tier.
+            {/* LINKS — placed at the BOTTOM (always includes the original product link) */}
+            <div ref={linkBottomRef} style={styles.linksWrap}>
+              <div style={styles.linksHeader}>
+                <h3 style={{ margin: 0 }}>Next step: open links</h3>
+                <div style={styles.linksSub}>
+                  The original product link is always shown below, even if the rating is negative.
                 </div>
               </div>
-            )}
+
+              {/* ORIGINAL PRODUCT CTA (always) */}
+              {primary?.href && (
+                <ExternalCardLink href={primary.href} style={styles.primaryCard}>
+                  <div style={styles.primaryCardTop}>
+                    <div style={styles.primaryEyebrow}>Original product link</div>
+                    <div style={styles.primaryCtaText}>
+                      {result.status === "good product"
+                        ? "Go back to your product →"
+                        : "Open the original product on Amazon →"}
+                    </div>
+                    <div style={styles.primarySub}>Opens Amazon in a new tab.</div>
+                  </div>
+                </ExternalCardLink>
+              )}
+
+              {/* SUGGESTED (ONLY if not good product) — still below original link */}
+              {showSuggested && (
+                <div style={styles.suggestedWrap}>
+                  <div style={styles.suggestedHeader}>
+                    <h3 style={{ margin: 0 }}>
+                      {result?.links?.suggestedLabel || "Your best-value options"}
+                    </h3>
+                    <div style={styles.suggestedSub}>
+                      {result?.links?.suggestedNote ||
+                        "Three alternatives across a low, mid, and high price range — optimized for value."}
+                    </div>
+                  </div>
+
+                  <div style={styles.suggestedGrid}>
+                    {suggested.slice(0, 3).map((item, idx) => (
+                      <ExternalCardLink key={idx} href={item?.link} style={styles.suggestedCard}>
+                        <div style={styles.suggestedTop}>
+                          <div style={styles.badge}>{item?.badge || "VALUE"}</div>
+                          <div style={styles.tier}>{item?.label || item?.tier}</div>
+                        </div>
+
+                        <div style={styles.suggestedTitle}>{item?.title || "Recommended option"}</div>
+
+                        {item?.displayPrice ? (
+                          <div style={styles.priceRow}>
+                            <span style={styles.price}>{item.displayPrice}</span>
+                          </div>
+                        ) : (
+                          <div style={styles.priceRow}>
+                            <span style={styles.priceMuted}>Price shown on Amazon</span>
+                          </div>
+                        )}
+
+                        <MeterBar label="Value" score={item?.valueScore} left="Poor" right="Great" />
+                        <MeterBar
+                          label="Quality"
+                          score={item?.qualityScore}
+                          left="Basic"
+                          right="Premium"
+                        />
+
+                        <div style={styles.tagline}>
+                          {item?.tagline ||
+                            "Strong value for the price. Click to see the current deal on Amazon."}
+                        </div>
+
+                        <div style={styles.openLine}>Open on Amazon →</div>
+                      </ExternalCardLink>
+                    ))}
+                  </div>
+
+                  <div style={styles.equivalencyNote}>
+                    These options are meant to be equivalent choices by <strong>value-for-price</strong>.
+                    Higher-priced picks usually include more features or stronger performance, but all
+                    three aim to be “worth it” for their tier.
+                  </div>
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>
@@ -573,6 +664,12 @@ const styles = {
     flexWrap: "wrap",
     marginBottom: 12,
   },
+  titleRowRight: {
+    display: "inline-flex",
+    gap: 10,
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
   scrollCue: {
     fontSize: 12,
     fontWeight: 900,
@@ -583,6 +680,73 @@ const styles = {
     borderRadius: 999,
     whiteSpace: "nowrap",
   },
+  jumpButton: {
+    fontSize: 12,
+    fontWeight: 950,
+    color: "#0f172a",
+    background: "#f1f5f9",
+    border: "1px solid #e2e8f0",
+    padding: "8px 10px",
+    borderRadius: 999,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+
+  explainBox: {
+    marginTop: 10,
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: 14,
+    padding: 12,
+  },
+  explainTitle: {
+    fontWeight: 950,
+    color: "#0f172a",
+    marginBottom: 8,
+    fontSize: 13,
+  },
+  explainGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 10,
+  },
+  explainItem: {
+    background: "#ffffff",
+    border: "1px solid #e2e8f0",
+    borderRadius: 12,
+    padding: 10,
+  },
+  explainKey: { fontSize: 12, fontWeight: 950, color: "#0f172a" },
+  explainVal: { fontSize: 12, color: "#475569", marginTop: 4, lineHeight: 1.5 },
+
+  snapshotRow: {
+    marginTop: 16,
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 12,
+  },
+  snapshotCard: {
+    borderRadius: 14,
+    border: "1px solid #e2e8f0",
+    background: "#ffffff",
+    padding: 12,
+    boxShadow: "0 10px 24px rgba(15,23,42,0.06)",
+  },
+  snapshotLabel: { fontSize: 12, fontWeight: 950, color: "#334155" },
+  snapshotValue: {
+    marginTop: 6,
+    fontSize: 18,
+    fontWeight: 950,
+    color: "#0f172a",
+  },
+  snapshotValueSmall: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: 800,
+    color: "#0f172a",
+    lineHeight: 1.5,
+  },
+  snapshotHint: { marginTop: 6, fontSize: 12, color: "#64748b", lineHeight: 1.6 },
 
   section: { marginTop: 18 },
   sectionTitle: { margin: "0 0 6px", color: "#0f172a" },
@@ -611,8 +775,29 @@ const styles = {
     color: "inherit",
   },
 
+  linksWrap: {
+    marginTop: 24,
+    borderTop: "1px solid #e2e8f0",
+    paddingTop: 18,
+  },
+  linksHeader: {
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    gap: 10,
+    flexWrap: "wrap",
+    marginBottom: 12,
+  },
+  linksSub: {
+    fontSize: 12,
+    color: "#64748b",
+    fontWeight: 800,
+    maxWidth: 420,
+    lineHeight: 1.5,
+  },
+
   primaryCard: {
-    marginTop: 10,
+    marginTop: 8,
     borderRadius: 16,
     border: "1px solid #dbeafe",
     background: "linear-gradient(180deg, #eff6ff 0%, #ffffff 70%)",
@@ -644,7 +829,7 @@ const styles = {
   },
 
   suggestedWrap: {
-    marginTop: 24,
+    marginTop: 18,
     borderTop: "1px solid #e2e8f0",
     paddingTop: 18,
   },
@@ -705,27 +890,36 @@ const styles = {
   price: { fontWeight: 950, color: "#0f172a" },
   priceMuted: { fontWeight: 900, color: "#64748b", fontSize: 12 },
 
-  valueWrap: { marginTop: 10 },
-  valueTop: {
+  meterWrap: { marginTop: 10 },
+  meterTop: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 6,
   },
-  valueLabel: { fontSize: 12, fontWeight: 900, color: "#334155" },
-  valueNum: { fontSize: 12, fontWeight: 950, color: "#0f172a" },
-  valueTrack: {
+  meterLabel: { fontSize: 12, fontWeight: 900, color: "#334155" },
+  meterNum: { fontSize: 12, fontWeight: 950, color: "#0f172a" },
+  meterTrack: {
     height: 10,
     borderRadius: 999,
     background: "#eef2ff",
     border: "1px solid #dbeafe",
     overflow: "hidden",
   },
-  valueFill: {
+  meterFill: {
     height: "100%",
     borderRadius: 999,
     background: "#2563eb",
   },
+  meterEnds: {
+    marginTop: 6,
+    display: "flex",
+    justifyContent: "space-between",
+    fontSize: 11,
+    color: "#64748b",
+    fontWeight: 800,
+  },
+  meterEndText: { lineHeight: 1.2 },
 
   tagline: {
     marginTop: 10,
