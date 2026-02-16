@@ -16,7 +16,6 @@ async function gptKnowledge(prompt) {
 
   try {
     const res = await openai.responses.create({
-      // Use whatever you want here; keeping it consistent + cheap:
       model: "gpt-4o-mini",
       input: prompt,
     });
@@ -102,6 +101,28 @@ function isAmazonContext(domain, seller) {
   return false;
 }
 
+/* ===================== PRICE HELPERS ===================== */
+
+function parsePriceToNumber(v) {
+  if (v === null || v === undefined) return null;
+
+  // keep digits, comma, dot; remove currency + words
+  const s = String(v)
+    .replace(/[^\d.,]/g, "")
+    .replace(/,/g, "")
+    .trim();
+
+  if (!s) return null;
+
+  const n = Number.parseFloat(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatPriceDisplay(n, currencySymbol = "$") {
+  if (!Number.isFinite(n)) return null;
+  return `${currencySymbol}${n.toFixed(2)}`;
+}
+
 /* ===================== JSON-LD HELPERS ===================== */
 
 function collectJsonLdNodes(value, nodes) {
@@ -164,7 +185,6 @@ function pickJsonLdOffer(offers) {
 async function aiMatchAndSimplify({ rawTitle, brand, seller, domain }) {
   // Amazon override
   if (isAmazonContext(domain, seller)) {
-    // Still simplify title -> brandSimple/product using AI (optional).
     const text = await gptKnowledge(`
 You are simplifying an ecommerce product title.
 
@@ -284,22 +304,26 @@ export async function extractFromHTML(url) {
 
     if (!rawTitle) return null;
 
-    // Turbopack requires explicit grouping when mixing ?? with logical operators.
+    // PRICE: gather multiple sources, then normalize to numeric + display.
     const offerPrice = offer?.price ?? offer?.priceSpecification?.price;
     const metaPrice = $('meta[property="product:price:amount"]').attr("content");
     const domPrice = $(".a-price .a-offscreen").first().text();
 
-    let price = offerPrice ?? metaPrice ?? domPrice ?? null;
+    const rawPrice = offerPrice ?? metaPrice ?? domPrice ?? null;
+    const priceValue = parsePriceToNumber(rawPrice);
+    const price = priceValue !== null ? formatPriceDisplay(priceValue, "$") : null;
 
-    if (price) {
-      const m = String(price).match(/(\$)?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?/);
-      price = m ? m[0] : null;
-    }
-
+    // SELLER: add additional fallbacks (Amazon and generic templates)
     let seller =
       getJsonLdString(offer?.seller) ||
-      $("#merchant-info").text() ||
+      $('[data-testid="seller-name"]').text() ||
+      $('a[id*="sellerProfileTriggerId"]').text() ||
       $("#sellerProfileTriggerId").text() ||
+      $("#merchant-info").text() ||
+      $('[data-feature-name="merchant-info"]').text() ||
+      $("#bylineInfo").text() ||
+      $('a#bylineInfo').text() ||
+      $('meta[name="author"]').attr("content") ||
       null;
 
     seller = normalizeSeller(seller);
@@ -311,7 +335,7 @@ export async function extractFromHTML(url) {
 
     const domain = normalizeDomain(u.hostname);
 
-    // AI step happens HERE (inside extract.js as you requested)
+    // AI step happens HERE
     const ai = await aiMatchAndSimplify({
       rawTitle,
       brand,
@@ -319,12 +343,12 @@ export async function extractFromHTML(url) {
       domain,
     });
 
-    // Return ONLY what you said should transfer forward (no title/rawTitle)
     return {
       seller,
-      price,
+      price, // stable display (e.g., "$129.99")
+      priceValue, // stable numeric compare (e.g., 129.99)
       domain,
-      platform: domain, // keeping alias for compatibility
+      platform: domain, // alias
       sellerMatchesBrand: ai?.sellerMatchesBrand || "no",
       brandSimple: ai?.brandSimple || null,
       product: ai?.product || null,
