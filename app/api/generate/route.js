@@ -78,7 +78,6 @@ function isPresent(v) {
  */
 
 function getAssociateTag() {
-  // Example: "yourtag-20"
   return (process.env.AMAZON_ASSOCIATE_TAG || "").trim() || null;
 }
 
@@ -87,10 +86,6 @@ function extractASINFromUrl(urlString) {
     const u = new URL(urlString);
     const path = u.pathname || "";
 
-    // Common patterns:
-    // /dp/B08.../
-    // /gp/product/B08.../
-    // /gp/aw/d/B08.../
     const m =
       path.match(/\/dp\/([A-Z0-9]{10})(?:[/?]|$)/i) ||
       path.match(/\/gp\/product\/([A-Z0-9]{10})(?:[/?]|$)/i) ||
@@ -98,7 +93,6 @@ function extractASINFromUrl(urlString) {
 
     if (m && m[1]) return m[1].toUpperCase();
 
-    // Some links include ASIN in query (rare)
     const asinQ = u.searchParams.get("asin") || u.searchParams.get("ASIN");
     if (asinQ && /^[A-Z0-9]{10}$/i.test(asinQ)) return asinQ.toUpperCase();
 
@@ -112,7 +106,6 @@ function buildAmazonDpLink({ asin, marketplaceHost = "www.amazon.com" }) {
   if (!asin) return null;
   const tag = getAssociateTag();
 
-  // If you haven't set the tag yet, still return clean dp link (no tag)
   const base = `https://${marketplaceHost}/dp/${encodeURIComponent(asin)}/ref=nosim`;
   if (!tag) return base;
   return `${base}?tag=${encodeURIComponent(tag)}`;
@@ -122,8 +115,6 @@ function buildAmazonSearchLink({ query, marketplaceHost = "www.amazon.com" }) {
   if (!query) return null;
   const tag = getAssociateTag();
 
-  // Search links can work, but attribution is best with direct /dp/ links.
-  // We still provide it as a fallback when we don't have ASINs.
   const base = `https://${marketplaceHost}/s?k=${encodeURIComponent(query)}`;
   if (!tag) return base;
   return `${base}&tag=${encodeURIComponent(tag)}`;
@@ -227,18 +218,12 @@ Return JSON only:
 }
 
 /* ===================== OVERALL GUARDRAILS (NO MISLABELING) ===================== */
-/**
- * This enforces your business rule:
- * - Do NOT label "GOOD PRODUCT" unless seller + product trust are strong.
- * - If seller/product trust are mediocre, overall becomes "BAD VALUE" (overpriced) at best.
- * - If seller or product trust is low, force "UNTRUSTWORTHY".
- */
+
 function applyOverallGuardrails({ websiteTrust, sellerTrust, productTrust, overall }) {
   const w = Number(websiteTrust?.score ?? 0);
   const s = Number(sellerTrust?.score ?? 0);
   const p = Number(productTrust?.score ?? 0);
 
-  // Hard floor: if either seller or product trust is <=2, it cannot be "good product".
   if (s <= 2 || p <= 2) {
     return {
       status: "untrustworthy",
@@ -249,11 +234,9 @@ function applyOverallGuardrails({ websiteTrust, sellerTrust, productTrust, overa
     };
   }
 
-  // Good Product requires strong seller + product trust.
   const canBeGood = s >= 4 && p >= 4 && w >= 3;
 
   if (!canBeGood) {
-    // If trust is “okay” but not strong, we treat it as BAD VALUE rather than GOOD PRODUCT.
     return {
       status: "overpriced",
       score: 3,
@@ -263,7 +246,6 @@ function applyOverallGuardrails({ websiteTrust, sellerTrust, productTrust, overa
     };
   }
 
-  // If it passes the gate, keep GPT’s overall but ensure it is good product.
   return {
     status: "good product",
     score: Math.max(4, overall?.score || 4),
@@ -275,23 +257,14 @@ function applyOverallGuardrails({ websiteTrust, sellerTrust, productTrust, overa
 }
 
 /* ===================== SUGGESTED PRODUCTS (3-TIER) ===================== */
-/**
- * This returns a structured 3-option block for the UI:
- * - low / mid / high
- * - each has: title, link, displayPrice (optional), valueScore (0-100), qualityScore (0-100), badge, tagline
- *
- * Right now (no PA-API), we generate links + persuasive scaffolding.
- * Later, you can replace the placeholder pricing with real prices (PA-API Offers.Listings.Price). :contentReference[oaicite:3]{index=3}
- */
 
 function valueScoreFromTier(tier) {
   if (tier === "low") return 72;
   if (tier === "mid") return 84;
-  return 93; // high
+  return 93;
 }
 
 function qualityScoreFromTier(tier) {
-  // Simple “quality meter” until PA-API/review modeling is added.
   if (tier === "low") return 58;
   if (tier === "mid") return 76;
   return 90;
@@ -347,7 +320,7 @@ function buildSuggested({ brandSimple, productType, marketplaceHost }) {
       link:
         buildAmazonSearchLink({ query: tierQuery, marketplaceHost }) ||
         buildAmazonSearchLink({ query: q, marketplaceHost }),
-      displayPrice: null, // populated later with PA-API
+      displayPrice: null,
       valueScore: valueScoreFromTier(tier),
       qualityScore: qualityScoreFromTier(tier),
       valueNote:
@@ -365,6 +338,7 @@ async function buildAiResult(extracted, analyses, originalUrl) {
     brandPriceData,
     productPriceData,
     productProblemsData,
+    categoryProblemsData,
   } = analyses || {};
 
   const title = extracted.brandSimple || extracted.product || "Unknown Product";
@@ -372,10 +346,11 @@ async function buildAiResult(extracted, analyses, originalUrl) {
   const evidence = {
     hasSellerEvidence:
       isPresent(extracted.seller) && !hasNoClearInfo(sellerData || ""),
-    hasPriceEvidence: isPresent(extracted.price),
+    hasPriceEvidence: Number.isFinite(extracted.priceValue),
     hasBrandPriceEvidence: !hasNoClearInfo(brandPriceData || ""),
     hasBrandEvidence: !hasNoClearInfo(productData || ""),
     hasBrandProblemsEvidence: !hasNoClearInfo(productProblemsData || ""),
+    hasCategoryProblemsEvidence: !hasNoClearInfo(categoryProblemsData || ""),
     hasCategoryPriceEvidence: !hasNoClearInfo(productPriceData || ""),
   };
 
@@ -396,7 +371,7 @@ async function buildAiResult(extracted, analyses, originalUrl) {
       seller: extracted.seller ?? null,
       sellerMatchesBrand: extracted.sellerMatchesBrand ?? "no",
       sellerInfo: sellerData ?? null,
-      listingPrice: extracted.price ?? null,
+      listingPrice: Number.isFinite(extracted.priceValue) ? extracted.priceValue : null,
       typicalBrandPrice: brandPriceData ?? null,
       sellerEvidenceFound: evidence.hasSellerEvidence ? "yes" : "no",
       priceEvidenceFound:
@@ -416,8 +391,10 @@ async function buildAiResult(extracted, analyses, originalUrl) {
       brand: extracted.brandSimple ?? null,
       productType: extracted.product ?? null,
       brandOverview: productData ?? null,
-      commonComplaints: productProblemsData ?? null,
+      brandComplaints: productProblemsData ?? null,
+      categoryComplaints: categoryProblemsData ?? null,
       brandEvidenceFound: productHasBrandSignals ? "yes" : "no",
+      categoryEvidenceFound: evidence.hasCategoryProblemsEvidence ? "yes" : "no",
     },
     strictFallbackScore: 3,
     maxScore: productMaxScore,
@@ -430,7 +407,6 @@ async function buildAiResult(extracted, analyses, originalUrl) {
     productTrust,
   });
 
-  // Guardrails so “GOOD PRODUCT” cannot be misapplied when trust is mediocre.
   const overall = applyOverallGuardrails({
     websiteTrust,
     sellerTrust,
@@ -438,16 +414,13 @@ async function buildAiResult(extracted, analyses, originalUrl) {
     overall: overallRaw,
   });
 
-  // Marketplace host (keep simple; your app currently targets .com)
   const marketplaceHost = "www.amazon.com";
 
-  // Primary affiliate link for "your product" (best for attribution)
   const asin = extractASINFromUrl(originalUrl);
   const primaryLink =
     buildAmazonDpLink({ asin, marketplaceHost }) ||
     buildAmazonSearchLink({ query: title, marketplaceHost });
 
-  // Suggested 3-tier alternatives ONLY when NOT good product
   const suggested =
     overall.status === "good product"
       ? []
@@ -457,9 +430,9 @@ async function buildAiResult(extracted, analyses, originalUrl) {
           marketplaceHost,
         });
 
-  // Provide pricing context to the UI for “why” clarity.
   const pricing = {
     listingPrice: extracted.price ?? null,
+    listingPriceValue: Number.isFinite(extracted.priceValue) ? extracted.priceValue : null,
     typicalBrandPrice: brandPriceData ?? null,
     typicalCategoryPrice: productPriceData ?? null,
   };
