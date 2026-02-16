@@ -226,22 +226,75 @@ Return JSON only:
   };
 }
 
+/* ===================== OVERALL GUARDRAILS (NO MISLABELING) ===================== */
+/**
+ * This enforces your business rule:
+ * - Do NOT label "GOOD PRODUCT" unless seller + product trust are strong.
+ * - If seller/product trust are mediocre, overall becomes "BAD VALUE" (overpriced) at best.
+ * - If seller or product trust is low, force "UNTRUSTWORTHY".
+ */
+function applyOverallGuardrails({ websiteTrust, sellerTrust, productTrust, overall }) {
+  const w = Number(websiteTrust?.score ?? 0);
+  const s = Number(sellerTrust?.score ?? 0);
+  const p = Number(productTrust?.score ?? 0);
+
+  // Hard floor: if either seller or product trust is <=2, it cannot be "good product".
+  if (s <= 2 || p <= 2) {
+    return {
+      status: "untrustworthy",
+      score: Math.min(2, overall?.score || 2),
+      meaning: "Trust too low",
+      reason:
+        "The seller or the product could not be verified strongly enough to recommend confidently. Use caution and verify seller identity, reviews, and return terms before buying.",
+    };
+  }
+
+  // Good Product requires strong seller + product trust.
+  const canBeGood = s >= 4 && p >= 4 && w >= 3;
+
+  if (!canBeGood) {
+    // If trust is “okay” but not strong, we treat it as BAD VALUE rather than GOOD PRODUCT.
+    return {
+      status: "overpriced",
+      score: 3,
+      meaning: "Ok, but not worth it",
+      reason:
+        "Trust signals are not strong enough to call this a clear win, even if nothing looks immediately wrong. Consider alternatives with stronger seller/product confidence for the price.",
+    };
+  }
+
+  // If it passes the gate, keep GPT’s overall but ensure it is good product.
+  return {
+    status: "good product",
+    score: Math.max(4, overall?.score || 4),
+    meaning: overall?.meaning || "Solid value",
+    reason:
+      overall?.reason ||
+      "Seller and product signals were consistently strong compared with typical listings. The overall rating reflects that the key trust checks looked good.",
+  };
+}
+
 /* ===================== SUGGESTED PRODUCTS (3-TIER) ===================== */
 /**
  * This returns a structured 3-option block for the UI:
  * - low / mid / high
- * - each has: title, link, displayPrice (optional), valueScore (0-100), badge, tagline
+ * - each has: title, link, displayPrice (optional), valueScore (0-100), qualityScore (0-100), badge, tagline
  *
  * Right now (no PA-API), we generate links + persuasive scaffolding.
  * Later, you can replace the placeholder pricing with real prices (PA-API Offers.Listings.Price). :contentReference[oaicite:3]{index=3}
  */
 
 function valueScoreFromTier(tier) {
-  // Your “value bar” needs a number. Higher tier = higher perceived value-for-price.
-  // Keep it consistent; don’t pretend it’s a real computed market price without PA-API.
   if (tier === "low") return 72;
   if (tier === "mid") return 84;
   return 93; // high
+}
+
+function qualityScoreFromTier(tier) {
+  // Simple “quality meter” until PA-API/review modeling is added.
+  if (tier === "low") return 58;
+  if (tier === "mid") return 76;
+  return 90;
 }
 
 function tierMeta(tier) {
@@ -276,14 +329,11 @@ function buildSuggested({ brandSimple, productType, marketplaceHost }) {
   const baseQuery = [brandSimple, productType].filter(Boolean).join(" ").trim();
   const q = baseQuery || "amazon product";
 
-  // If you later get real ASINs from PA-API, replace these with dp links.
   const tiers = ["low", "mid", "high"];
 
   return tiers.map((tier) => {
     const meta = tierMeta(tier);
 
-    // We bias search query terms slightly by tier (this is *not* pricing).
-    // You can tweak these keywords later.
     const tierQuery =
       tier === "low"
         ? `${q} best value`
@@ -299,6 +349,7 @@ function buildSuggested({ brandSimple, productType, marketplaceHost }) {
         buildAmazonSearchLink({ query: q, marketplaceHost }),
       displayPrice: null, // populated later with PA-API
       valueScore: valueScoreFromTier(tier),
+      qualityScore: qualityScoreFromTier(tier),
       valueNote:
         "Value score is a quick guide. Actual pricing and availability are on Amazon.",
     };
@@ -372,11 +423,19 @@ async function buildAiResult(extracted, analyses, originalUrl) {
     maxScore: productMaxScore,
   });
 
-  const overall = await rateOverall({
+  const overallRaw = await rateOverall({
     title,
     websiteTrust,
     sellerTrust,
     productTrust,
+  });
+
+  // Guardrails so “GOOD PRODUCT” cannot be misapplied when trust is mediocre.
+  const overall = applyOverallGuardrails({
+    websiteTrust,
+    sellerTrust,
+    productTrust,
+    overall: overallRaw,
   });
 
   // Marketplace host (keep simple; your app currently targets .com)
@@ -398,6 +457,13 @@ async function buildAiResult(extracted, analyses, originalUrl) {
           marketplaceHost,
         });
 
+  // Provide pricing context to the UI for “why” clarity.
+  const pricing = {
+    listingPrice: extracted.price ?? null,
+    typicalBrandPrice: brandPriceData ?? null,
+    typicalCategoryPrice: productPriceData ?? null,
+  };
+
   return {
     status: overall.status,
     title,
@@ -410,14 +476,15 @@ async function buildAiResult(extracted, analyses, originalUrl) {
       reason: overall.reason,
     },
 
-    // NEW: monetization/link payload for the UI
+    pricing,
+
     links: {
       primary: {
-        label: overall.status === "good product" ? "Your product" : "View product",
+        label: "Original product",
         cta:
           overall.status === "good product"
             ? "Go back to your product →"
-            : "View product details →",
+            : "Open the original product →",
         href: primaryLink,
         asin: asin || null,
       },
