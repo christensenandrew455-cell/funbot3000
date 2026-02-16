@@ -1,3 +1,4 @@
+// app/api/generate/search.js
 import { OpenAI } from "openai";
 
 /* ===================== OPENAI ===================== */
@@ -43,7 +44,8 @@ function cleanParagraph(v) {
  *    "productData": "...",
  *    "brandPriceData": "...",
  *    "productPriceData": "...",
- *    "productProblemsData": "..."
+ *    "productProblemsData": "...",
+ *    "categoryProblemsData": "..."
  *  }
  */
 export async function runAllSearches({ seller, brandSimple, product }) {
@@ -58,6 +60,8 @@ Rules (important):
 - If you do not find clear information, return: "No clear information found."
 - Keep each field to 1 short paragraph (2–4 sentences max).
 - Prefer widely-cited/credible sources when possible.
+- DO NOT summarize customer reviews, star ratings, or "mixed feedback".
+  Focus on establishment/identity and verifiable trust signals (company profile, marketplace presence, enforcement actions reported by credible sources, domain/company history, official pages).
 - Return JSON only with the exact keys below.
 
 Inputs:
@@ -67,11 +71,12 @@ Product category (generic): ${product || "unknown"}
 
 Return JSON only:
 {
-  "sellerData": "General info people mention about the seller (neutral).",
-  "productData": "General info people mention about the brandSimple item (neutral).",
+  "sellerData": "Who the seller appears to be and whether they are established/identifiable (no reviews).",
+  "productData": "How established/well-known the brand/product line (brandSimple) is (no reviews).",
   "brandPriceData": "Typical prices/ranges mentioned online for brandSimple (neutral).",
   "productPriceData": "Typical general market price range for the product category (neutral).",
-  "productProblemsData": "Commonly mentioned issues or complaints tied to brandSimple (neutral)."
+  "productProblemsData": "Commonly mentioned issues or complaints tied to brandSimple (neutral, no reviews).",
+  "categoryProblemsData": "Commonly mentioned issues across the whole product category (neutral, no reviews)."
 }
 `;
 
@@ -89,10 +94,14 @@ Return JSON only:
     return {
       sellerData: cleanParagraph(parsed.sellerData) || "No clear information found.",
       productData: cleanParagraph(parsed.productData) || "No clear information found.",
-      brandPriceData: cleanParagraph(parsed.brandPriceData) || "No clear information found.",
-      productPriceData: cleanParagraph(parsed.productPriceData) || "No clear information found.",
+      brandPriceData:
+        cleanParagraph(parsed.brandPriceData) || "No clear information found.",
+      productPriceData:
+        cleanParagraph(parsed.productPriceData) || "No clear information found.",
       productProblemsData:
         cleanParagraph(parsed.productProblemsData) || "No clear information found.",
+      categoryProblemsData:
+        cleanParagraph(parsed.categoryProblemsData) || "No clear information found.",
     };
   } catch {
     return null;
@@ -100,10 +109,6 @@ Return JSON only:
 }
 
 /* ===================== COMPAT WRAPPERS ===================== */
-/**
- * These keep your existing route.js calls working if you still call the old functions.
- * BUT: for best performance/cost, call runAllSearches() once and use the returned fields.
- */
 
 export async function getSellerData(seller) {
   const all = await runAllSearches({ seller, brandSimple: null, product: null });
@@ -128,4 +133,10 @@ export async function getProductPriceData(product) {
 export async function getProductProblemsData(brandSimple) {
   const all = await runAllSearches({ seller: null, brandSimple, product: null });
   return all?.productProblemsData || null;
+}
+
+// NEW: category-level problems wrapper
+export async function getCategoryProblemsData(product) {
+  const all = await runAllSearches({ seller: null, brandSimple: null, product });
+  return all?.categoryProblemsData || null;
 }
