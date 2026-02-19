@@ -73,8 +73,8 @@ function isPresent(v) {
 
 /* ===================== AMAZON LINKING (AFFILIATE) ===================== */
 /**
- * Clean affiliate link format: https://www.amazon.com/dp/ASIN/ref=nosim?tag=YOURTAG
- * Amazon documents this exact pattern. :contentReference[oaicite:2]{index=2}
+ * Clean affiliate link format:
+ * https://www.amazon.com/dp/ASIN/ref=nosim?tag=YOURTAG
  */
 
 function getAssociateTag() {
@@ -106,7 +106,9 @@ function buildAmazonDpLink({ asin, marketplaceHost = "www.amazon.com" }) {
   if (!asin) return null;
   const tag = getAssociateTag();
 
-  const base = `https://${marketplaceHost}/dp/${encodeURIComponent(asin)}/ref=nosim`;
+  const base = `https://${marketplaceHost}/dp/${encodeURIComponent(
+    asin
+  )}/ref=nosim`;
   if (!tag) return base;
   return `${base}?tag=${encodeURIComponent(tag)}`;
 }
@@ -187,9 +189,15 @@ IMPORTANT RULES:
 TITLE: ${title || "unknown"}
 
 COMPONENTS:
-- Website Trust: ${websiteTrust?.score ?? "null"}/5 — ${websiteTrust?.reason ?? "null"}
-- Seller Trust: ${sellerTrust?.score ?? "null"}/5 — ${sellerTrust?.reason ?? "null"}
-- Product Trust: ${productTrust?.score ?? "null"}/5 — ${productTrust?.reason ?? "null"}
+- Website Trust: ${websiteTrust?.score ?? "null"}/5 — ${
+    websiteTrust?.reason ?? "null"
+  }
+- Seller Trust: ${sellerTrust?.score ?? "null"}/5 — ${
+    sellerTrust?.reason ?? "null"
+  }
+- Product Trust: ${productTrust?.score ?? "null"}/5 — ${
+    productTrust?.reason ?? "null"
+  }
 
 Return JSON only:
 {
@@ -204,7 +212,12 @@ Return JSON only:
 
   const statusRaw =
     typeof parsed?.status === "string" ? parsed.status.trim() : "";
-  const allowed = new Set(["scam", "untrustworthy", "overpriced", "good product"]);
+  const allowed = new Set([
+    "scam",
+    "untrustworthy",
+    "overpriced",
+    "good product",
+  ]);
   const status = allowed.has(statusRaw) ? statusRaw : "good product";
 
   return {
@@ -219,7 +232,12 @@ Return JSON only:
 
 /* ===================== OVERALL GUARDRAILS (NO MISLABELING) ===================== */
 
-function applyOverallGuardrails({ websiteTrust, sellerTrust, productTrust, overall }) {
+function applyOverallGuardrails({
+  websiteTrust,
+  sellerTrust,
+  productTrust,
+  overall,
+}) {
   const w = Number(websiteTrust?.score ?? 0);
   const s = Number(sellerTrust?.score ?? 0);
   const p = Number(productTrust?.score ?? 0);
@@ -295,7 +313,7 @@ function tierMeta(tier) {
     badge: "TOP VALUE",
     tagline:
       "Higher price, but typically the strongest overall value if you want the best option.",
-  };
+    };
 }
 
 function buildSuggested({ brandSimple, productType, marketplaceHost }) {
@@ -311,8 +329,8 @@ function buildSuggested({ brandSimple, productType, marketplaceHost }) {
       tier === "low"
         ? `${q} best value`
         : tier === "mid"
-          ? `${q} top rated value`
-          : `${q} premium best`;
+        ? `${q} top rated value`
+        : `${q} premium best`;
 
     return {
       ...meta,
@@ -371,11 +389,15 @@ async function buildAiResult(extracted, analyses, originalUrl) {
       seller: extracted.seller ?? null,
       sellerMatchesBrand: extracted.sellerMatchesBrand ?? "no",
       sellerInfo: sellerData ?? null,
-      listingPrice: Number.isFinite(extracted.priceValue) ? extracted.priceValue : null,
+      listingPrice: Number.isFinite(extracted.priceValue)
+        ? extracted.priceValue
+        : null,
       typicalBrandPrice: brandPriceData ?? null,
       sellerEvidenceFound: evidence.hasSellerEvidence ? "yes" : "no",
       priceEvidenceFound:
-        evidence.hasPriceEvidence && evidence.hasBrandPriceEvidence ? "yes" : "no",
+        evidence.hasPriceEvidence && evidence.hasBrandPriceEvidence
+          ? "yes"
+          : "no",
     },
     strictFallbackScore: 3,
     maxScore: sellerMaxScore,
@@ -432,7 +454,9 @@ async function buildAiResult(extracted, analyses, originalUrl) {
 
   const pricing = {
     listingPrice: extracted.price ?? null,
-    listingPriceValue: Number.isFinite(extracted.priceValue) ? extracted.priceValue : null,
+    listingPriceValue: Number.isFinite(extracted.priceValue)
+      ? extracted.priceValue
+      : null,
     typicalBrandPrice: brandPriceData ?? null,
     typicalCategoryPrice: productPriceData ?? null,
   };
@@ -478,7 +502,10 @@ export async function POST(request) {
   try {
     const { url } = await request.json();
     if (!url || typeof url !== "string") {
-      return Response.json({ error: "A valid URL is required." }, { status: 400 });
+      return Response.json(
+        { error: "A valid URL is required." },
+        { status: 400 }
+      );
     }
 
     const extracted = await extractFromHTML(url);
