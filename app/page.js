@@ -4,44 +4,12 @@
 import { useMemo } from "react";
 
 function LogoMark({ size = 22 }) {
-  // Simple “A + magnifying glass” mark that reads well small (header + future favicon reference)
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 64 64"
-      role="img"
-      aria-label="Alitrite"
-      style={{ display: "block" }}
-    >
-      {/* A */}
-      <path
-        d="M30 10 L12 54 H20 L24 44 H40 L44 54 H52 L34 10 Z M27 36 L32 22 L37 36 Z"
-        fill="#2563eb"
-      />
-      {/* Magnifying glass */}
-      <circle
-        cx="45"
-        cy="23"
-        r="10"
-        fill="none"
-        stroke="#0f172a"
-        strokeWidth="4"
-      />
-      <path
-        d="M52 30 L60 38"
-        stroke="#0f172a"
-        strokeWidth="4"
-        strokeLinecap="round"
-      />
-      {/* “Text lines” inside lens */}
-      <path
-        d="M39 22 H51 M39 26 H49 M39 18 H50"
-        stroke="#0f172a"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        opacity="0.85"
-      />
+    <svg width={size} height={size} viewBox="0 0 64 64" role="img" aria-label="Alitrite" style={{ display: "block" }}>
+      <path d="M30 10 L12 54 H20 L24 44 H40 L44 54 H52 L34 10 Z M27 36 L32 22 L37 36 Z" fill="#2563eb" />
+      <circle cx="45" cy="23" r="10" fill="none" stroke="#0f172a" strokeWidth="4" />
+      <path d="M52 30 L60 38" stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
+      <path d="M39 22 H51 M39 26 H49 M39 18 H50" stroke="#0f172a" strokeWidth="2.5" strokeLinecap="round" opacity="0.85" />
     </svg>
   );
 }
@@ -61,25 +29,29 @@ export default function HomePage() {
           </a>
 
           <nav style={s.nav} aria-label="Primary">
-            <a style={s.navLink} href="#how">
-              How it works
-            </a>
-            <a style={s.navLink} href="#ratings">
-              Ratings
-            </a>
-            {/* Privacy in header should jump to the privacy section on THIS page */}
-            <a style={s.navLink} href="#privacy">
-              Privacy
-            </a>
-            <a style={s.navLink} href="#faq">
-              FAQ
-            </a>
+            <a style={s.navLink} href="#how">How it works</a>
+            <a style={s.navLink} href="#ratings">Ratings</a>
+            <a style={s.navLink} href="#roadmap">Roadmap</a>
+            <a style={s.navLink} href="#privacy">Privacy</a>
+            <a style={s.navLink} href="#faq">FAQ</a>
 
-            {/* Header CTA label should be the site name (still links to the tool page) */}
             <a style={{ ...s.navLink, ...s.navCTA }} href="/droplink">
               Alitrite Tool →
             </a>
           </nav>
+        </div>
+
+        {/* TOP “WORK IN PROGRESS” BANNER */}
+        <div style={s.topBanner}>
+          <div style={s.topBannerInner}>
+            <div style={s.topBannerLeft}>
+              <span style={s.topBadge}>COMING SOON</span>
+              <span style={s.topBannerText}>
+                Chrome Extension — one-click checks while you browse Amazon.
+              </span>
+            </div>
+            <a href="#roadmap" style={s.topBannerLink}>See what we’re building →</a>
+          </div>
         </div>
       </header>
 
@@ -89,24 +61,18 @@ export default function HomePage() {
           <div style={s.heroGrid}>
             <div>
               <h1 style={s.h1}>
-                Know if an Amazon product is legit{" "}
-                <span style={s.h1Accent}>before</span> you buy.
+                Know if an Amazon product is legit <span style={s.h1Accent}>before</span> you buy.
               </h1>
 
               <p style={s.lead}>
-                Alitrite is a free, AI-assisted product checker. Paste an Amazon
-                product link and get a clear rating based on signals from the
-                listing, seller context, and value indicators — designed to help
-                you avoid scams, sketchy listings, and bad deals.
+                Alitrite is a free, AI-assisted product checker. Paste an Amazon product link and get a clear rating
+                based on signals from the listing, seller context, and value indicators — designed to help you avoid
+                scams, sketchy listings, and bad deals.
               </p>
 
               <div style={s.ctaRow}>
-                <a href="/droplink" style={s.primaryBtn}>
-                  Check a product (free) →
-                </a>
-                <a href="#how" style={s.secondaryBtn}>
-                  How it works
-                </a>
+                <a href="/droplink" style={s.primaryBtn}>Check a product (free) →</a>
+                <a href="#how" style={s.secondaryBtn}>How it works</a>
               </div>
 
               <div style={s.trustRow}>
@@ -116,9 +82,8 @@ export default function HomePage() {
               </div>
 
               <p style={s.micro}>
-                Not affiliated with Amazon. AI can make mistakes. Alitrite
-                provides guidance, not guarantees — verify critical details
-                before purchasing.
+                Not affiliated with Amazon. AI can make mistakes. Alitrite provides guidance, not guarantees — verify
+                critical details before purchasing.
               </p>
             </div>
 
@@ -127,9 +92,7 @@ export default function HomePage() {
               <div style={s.cardTop}>
                 <div style={s.cardBadge}>Rating levels</div>
                 <div style={s.cardTitle}>Simple, readable outcomes</div>
-                <div style={s.cardSub}>
-                  You get a label + short reasoning that’s easy to act on.
-                </div>
+                <div style={s.cardSub}>You get a label + short reasoning that’s easy to act on.</div>
               </div>
 
               <div style={s.levelList}>
@@ -158,16 +121,49 @@ export default function HomePage() {
                   <span style={{ ...s.dot, background: "#16a34a" }} />
                   <div>
                     <div style={s.levelName}>Good product</div>
-                    <div style={s.levelDesc}>
-                      Strong signals + reasonable value.
-                    </div>
+                    <div style={s.levelDesc}>Strong signals + reasonable value.</div>
                   </div>
                 </div>
               </div>
 
-              <a href="/droplink" style={s.cardCTA}>
-                Run a check →
-              </a>
+              <a href="/droplink" style={s.cardCTA}>Run a check →</a>
+            </div>
+          </div>
+        </section>
+
+        {/* FEATURED “AD” BLOCK (for your extension) */}
+        <section style={s.featuredAd}>
+          <div style={s.featuredInner}>
+            <div>
+              <div style={s.featuredEyebrow}>FEATURED</div>
+              <h2 style={s.featuredTitle}>The Chrome Extension is next.</h2>
+              <p style={s.featuredText}>
+                Soon you’ll be able to run Alitrite with one click directly from the Amazon page — no copying links.
+                We’re building this right now along with a smarter “exact product finder.”
+              </p>
+
+              <div style={s.featuredButtons}>
+                <a href="#roadmap" style={s.featuredBtnPrimary}>View roadmap →</a>
+                <a href="/droplink" style={s.featuredBtnSecondary}>Use the tool now →</a>
+              </div>
+
+              <div style={s.featuredFine}>
+                This is an early build. Features are rolling out in stages.
+              </div>
+            </div>
+
+            <div style={s.featuredSide}>
+              <div style={s.featuredSideCard}>
+                <div style={s.featuredSideTop}>
+                  <div style={s.featuredSideBadge}>IN PROGRESS</div>
+                  <div style={s.featuredSideTitle}>What’s being improved</div>
+                </div>
+                <ul style={s.featuredList}>
+                  <li>Mobile layout + readability</li>
+                  <li>Better scam/value detection signals</li>
+                  <li>Exact product finder (describe what you want)</li>
+                </ul>
+              </div>
             </div>
           </div>
         </section>
@@ -176,40 +172,33 @@ export default function HomePage() {
         <section id="how" style={s.section}>
           <h2 style={s.h2}>How Alitrite works</h2>
           <p style={s.p}>
-            You paste an Amazon product link. Alitrite analyzes the product
-            listing context and returns a rating that’s easy to understand. The
-            goal is simple: reduce the chance you waste money on scams,
-            low-quality junk, or bad deals.
+            You paste an Amazon product link. Alitrite analyzes the product listing context and returns a rating that’s
+            easy to understand. The goal is simple: reduce the chance you waste money on scams, low-quality junk, or bad
+            deals.
           </p>
 
           <div style={s.grid3}>
             <div style={s.featureCard}>
               <div style={s.featureTitle}>1) Paste the link</div>
-              <div style={s.featureText}>
-                Copy the full Amazon product URL and paste it into the Alitrite
-                Tool page.
-              </div>
+              <div style={s.featureText}>Copy the full Amazon product URL and paste it into the Alitrite Tool page.</div>
             </div>
             <div style={s.featureCard}>
               <div style={s.featureTitle}>2) AI-assisted analysis</div>
               <div style={s.featureText}>
-                The system evaluates signals around the listing, seller context,
-                and value indicators to estimate risk.
+                The system evaluates signals around the listing, seller context, and value indicators to estimate risk.
               </div>
             </div>
             <div style={s.featureCard}>
               <div style={s.featureTitle}>3) Get a clear outcome</div>
               <div style={s.featureText}>
-                You get one of four levels (Scam, Untrustworthy, Bad Value, Good
-                Product) plus reasoning you can skim fast.
+                You get one of four levels (Scam, Untrustworthy, Bad Value, Good Product) plus reasoning you can skim fast.
               </div>
             </div>
           </div>
 
           <div style={s.notice}>
-            <strong>Note:</strong> Alitrite currently supports{" "}
-            <strong>Amazon product links</strong>. Other marketplaces are not
-            guaranteed to work yet.
+            <strong>Note:</strong> Alitrite currently supports <strong>Amazon product links</strong>. Other marketplaces are
+            not guaranteed to work yet.
           </div>
         </section>
 
@@ -220,92 +209,95 @@ export default function HomePage() {
 
           <div style={s.grid2}>
             <div style={s.ratingCard}>
-              <div
-                style={{
-                  ...s.ratingTag,
-                  background: "#fee2e2",
-                  color: "#991b1b",
-                }}
-              >
-                SCAM
-              </div>
-              <div style={s.ratingText}>
-                Strong risk signals. If you’re unsure, do not purchase.
-              </div>
+              <div style={{ ...s.ratingTag, background: "#fee2e2", color: "#991b1b" }}>SCAM</div>
+              <div style={s.ratingText}>Strong risk signals. If you’re unsure, do not purchase.</div>
             </div>
 
             <div style={s.ratingCard}>
-              <div
-                style={{
-                  ...s.ratingTag,
-                  background: "#ffedd5",
-                  color: "#9a3412",
-                }}
-              >
-                UNTRUSTWORTHY
-              </div>
-              <div style={s.ratingText}>
-                Too many issues in seller/listing signals. High caution
-                recommended.
-              </div>
+              <div style={{ ...s.ratingTag, background: "#ffedd5", color: "#9a3412" }}>UNTRUSTWORTHY</div>
+              <div style={s.ratingText}>Too many issues in seller/listing signals. High caution recommended.</div>
             </div>
 
             <div style={s.ratingCard}>
-              <div
-                style={{
-                  ...s.ratingTag,
-                  background: "#fef3c7",
-                  color: "#92400e",
-                }}
-              >
-                BAD VALUE
-              </div>
-              <div style={s.ratingText}>
-                It may be real, but the price/value looks off. Consider
-                alternatives.
-              </div>
+              <div style={{ ...s.ratingTag, background: "#fef3c7", color: "#92400e" }}>BAD VALUE</div>
+              <div style={s.ratingText}>It may be real, but the price/value looks off. Consider alternatives.</div>
             </div>
 
             <div style={s.ratingCard}>
-              <div
-                style={{
-                  ...s.ratingTag,
-                  background: "#dcfce7",
-                  color: "#166534",
-                }}
-              >
-                GOOD PRODUCT
-              </div>
-              <div style={s.ratingText}>
-                Stronger signals and better value indicators. Still verify
-                important details.
-              </div>
+              <div style={{ ...s.ratingTag, background: "#dcfce7", color: "#166534" }}>GOOD PRODUCT</div>
+              <div style={s.ratingText}>Stronger signals and better value indicators. Still verify important details.</div>
             </div>
           </div>
 
           <div style={s.ctaStrip}>
-            <div style={s.ctaStripText}>
-              Don’t guess. Paste the link and get a readable verdict in seconds.
-            </div>
-            <a href="/droplink" style={s.ctaStripBtn}>
-              Check a product →
-            </a>
+            <div style={s.ctaStripText}>Don’t guess. Paste the link and get a readable verdict in seconds.</div>
+            <a href="/droplink" style={s.ctaStripBtn}>Check a product →</a>
           </div>
         </section>
 
-        {/* PRIVACY (short summary + learn more) */}
+        {/* ROADMAP */}
+        <section id="roadmap" style={s.section}>
+          <h2 style={s.h2}>What we’re building</h2>
+          <p style={s.p}>
+            This is the first public version. These are the next features and improvements currently planned/in progress.
+          </p>
+
+          <div style={s.roadmapGrid}>
+            <div style={s.roadmapCard}>
+              <div style={s.roadmapTop}>
+                <span style={s.roadmapBadge}>COMING SOON</span>
+                <span style={s.roadmapTitle}>Chrome Extension</span>
+              </div>
+              <div style={s.roadmapText}>One-click Alitrite checks directly on the Amazon product page.</div>
+            </div>
+
+            <div style={s.roadmapCard}>
+              <div style={s.roadmapTop}>
+                <span style={s.roadmapBadgeMuted}>PLANNED</span>
+                <span style={s.roadmapTitle}>Exact Product Finder</span>
+              </div>
+              <div style={s.roadmapText}>
+                Describe exactly what you need (features + price range) and get the closest matches.
+              </div>
+            </div>
+
+            <div style={s.roadmapCard}>
+              <div style={s.roadmapTop}>
+                <span style={s.roadmapBadgeMuted}>PLANNED</span>
+                <span style={s.roadmapTitle}>Best-Value Search Mode</span>
+              </div>
+              <div style={s.roadmapText}>
+                Type a product name (e.g., “wireless earbuds”) and get best value picks across tiers.
+              </div>
+            </div>
+
+            <div style={s.roadmapCard}>
+              <div style={s.roadmapTop}>
+                <span style={s.roadmapBadge}>IN PROGRESS</span>
+                <span style={s.roadmapTitle}>Scam/Value Detection v2</span>
+              </div>
+              <div style={s.roadmapText}>Better price handling, clearer evidence, and fewer false negatives.</div>
+            </div>
+
+            <div style={s.roadmapCard}>
+              <div style={s.roadmapTop}>
+                <span style={s.roadmapBadge}>IN PROGRESS</span>
+                <span style={s.roadmapTitle}>Mobile UX Improvements</span>
+              </div>
+              <div style={s.roadmapText}>Cleaner layout on phones, better spacing, fewer cramped grids.</div>
+            </div>
+          </div>
+        </section>
+
+        {/* PRIVACY */}
         <section id="privacy" style={s.section}>
           <h2 style={s.h2}>Privacy</h2>
           <p style={s.p}>
-            No account required to run checks. We don’t need your personal info
-            to analyze a product link. If we use affiliate links (like Amazon),
-            Amazon may use cookies to track purchases for commission attribution.
+            No account required to run checks. We don’t need your personal info to analyze a product link. If we use
+            affiliate links (like Amazon), Amazon may use cookies to track purchases for commission attribution.
           </p>
-
           <div style={s.privacyRow}>
-            <a href="/privacy" style={s.privacyBtn}>
-              Read the full Privacy Policy →
-            </a>
+            <a href="/privacy" style={s.privacyBtn}>Read the full Privacy Policy →</a>
           </div>
         </section>
 
@@ -315,51 +307,40 @@ export default function HomePage() {
 
           <details style={s.faq}>
             <summary style={s.faqQ}>Is Alitrite free?</summary>
-            <div style={s.faqA}>
-              Yes. It’s designed to be free to use and you can run checks as
-              many times as you want.
-            </div>
+            <div style={s.faqA}>Yes. It’s designed to be free to use and you can run checks as many times as you want.</div>
           </details>
 
           <details style={s.faq}>
             <summary style={s.faqQ}>What links work?</summary>
             <div style={s.faqA}>
-              Right now, Alitrite is built for Amazon product pages. Other
-              marketplaces are not guaranteed.
+              Right now, Alitrite is built for Amazon product pages. Other marketplaces are not guaranteed.
             </div>
           </details>
 
           <details style={s.faq}>
             <summary style={s.faqQ}>Is the rating always correct?</summary>
             <div style={s.faqA}>
-              No system is perfect. AI can make mistakes. Use the result as
-              guidance and always double-check critical info before buying
-              (especially for high-cost purchases).
+              No system is perfect. AI can make mistakes. Use the result as guidance and always double-check critical info
+              before buying (especially for high-cost purchases).
             </div>
           </details>
 
           <details style={s.faq}>
             <summary style={s.faqQ}>What do the levels mean?</summary>
             <div style={s.faqA}>
-              Alitrite returns one of four outcomes: Scam, Untrustworthy, Bad
-              Value, or Good Product — plus a short explanation so you
-              understand why.
+              Alitrite returns one of four outcomes: Scam, Untrustworthy, Bad Value, or Good Product — plus a short explanation
+              so you understand why.
             </div>
           </details>
 
           <details style={s.faq}>
             <summary style={s.faqQ}>Do you collect my personal information?</summary>
-            <div style={s.faqA}>
-              The basic flow does not require your personal info. For details,
-              see the full Privacy Policy.
-            </div>
+            <div style={s.faqA}>The basic flow does not require your personal info. For details, see the full Privacy Policy.</div>
           </details>
 
           <div style={s.bottomCTA}>
             <div style={s.bottomCTAText}>Ready?</div>
-            <a href="/droplink" style={s.primaryBtn}>
-              Check a product →
-            </a>
+            <a href="/droplink" style={s.primaryBtn}>Check a product →</a>
           </div>
         </section>
       </main>
@@ -368,24 +349,13 @@ export default function HomePage() {
         <div style={s.footerInner}>
           <div style={s.footerLeft}>
             {year} © Alitrite
-            <div style={s.footerMicro}>
-              Not affiliated with Amazon. AI-assisted guidance only — verify
-              critical details.
-            </div>
+            <div style={s.footerMicro}>Not affiliated with Amazon. AI-assisted guidance only — verify critical details.</div>
           </div>
           <div style={s.footerRight}>
-            <a style={s.footerLink} href="/droplink">
-              Alitrite Tool
-            </a>
-            <a style={s.footerLink} href="#privacy">
-              Privacy
-            </a>
-            <a style={s.footerLink} href="/privacy">
-              Privacy Policy
-            </a>
-            <a style={s.footerLink} href="#faq">
-              FAQ
-            </a>
+            <a style={s.footerLink} href="/droplink">Alitrite Tool</a>
+            <a style={s.footerLink} href="#privacy">Privacy</a>
+            <a style={s.footerLink} href="/privacy">Privacy Policy</a>
+            <a style={s.footerLink} href="#faq">FAQ</a>
           </div>
         </div>
       </footer>
@@ -394,11 +364,8 @@ export default function HomePage() {
 }
 
 const s = {
-  page: {
-    minHeight: "100vh",
-    background: "#f6f8fc",
-    color: "#0f172a",
-  },
+  page: { minHeight: "100vh", background: "#f6f8fc", color: "#0f172a" },
+
   header: {
     position: "sticky",
     top: 0,
@@ -416,55 +383,63 @@ const s = {
     justifyContent: "space-between",
     gap: 12,
   },
-  brandWrap: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    minWidth: 140,
-    textDecoration: "none",
-    color: "inherit",
-  },
-  logo: {
-    width: 22,
-    height: 22,
-    borderRadius: 8,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  brand: { fontWeight: 900, letterSpacing: 0.2, fontSize: 18 },
 
-  nav: {
-    display: "flex",
-    gap: 10,
-    alignItems: "center",
-    flexWrap: "wrap",
-    justifyContent: "flex-end",
+  topBanner: {
+    borderTop: "1px solid #e2e8f0",
+    background: "linear-gradient(180deg, #eff6ff 0%, rgba(246,248,252,0.9) 100%)",
   },
-  navLink: {
+  topBannerInner: {
+    maxWidth: 1040,
+    margin: "0 auto",
+    padding: "10px 16px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  topBannerLeft: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
+  topBadge: {
+    fontSize: 11,
+    fontWeight: 950,
+    color: "#1d4ed8",
+    background: "#dbeafe",
+    border: "1px solid #bfdbfe",
+    padding: "6px 10px",
+    borderRadius: 999,
+  },
+  topBannerText: { fontWeight: 900, color: "#0f172a", fontSize: 13 },
+  topBannerLink: {
+    color: "#2563eb",
     textDecoration: "none",
-    color: "#334155",
-    fontWeight: 800,
+    fontWeight: 950,
     fontSize: 13,
     padding: "8px 10px",
     borderRadius: 10,
+    background: "#ffffff",
+    border: "1px solid #dbeafe",
   },
-  navCTA: {
-    background: "#2563eb",
-    color: "#fff",
-  },
+
+  brandWrap: { display: "flex", alignItems: "center", gap: 10, minWidth: 140, textDecoration: "none", color: "inherit" },
+  logo: { width: 22, height: 22, borderRadius: 8, display: "inline-flex", alignItems: "center", justifyContent: "center" },
+  brand: { fontWeight: 900, letterSpacing: 0.2, fontSize: 18 },
+
+  nav: { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" },
+  navLink: { textDecoration: "none", color: "#334155", fontWeight: 800, fontSize: 13, padding: "8px 10px", borderRadius: 10 },
+  navCTA: { background: "#2563eb", color: "#fff" },
 
   main: { maxWidth: 1040, margin: "0 auto", padding: "22px 16px 64px" },
 
   hero: { padding: "26px 0 10px" },
+  // RESPONSIVE WITHOUT MEDIA QUERIES:
   heroGrid: {
     display: "grid",
-    gridTemplateColumns: "1.25fr 0.9fr",
+    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
     gap: 18,
     alignItems: "start",
   },
   h1: {
-    fontSize: 44,
+    fontSize: "clamp(32px, 5.5vw, 44px)",
     lineHeight: 1.05,
     margin: 0,
     fontWeight: 950,
@@ -474,55 +449,16 @@ const s = {
   lead: { marginTop: 14, fontSize: 16, lineHeight: 1.7, color: "#475569" },
 
   ctaRow: { display: "flex", gap: 12, marginTop: 16, flexWrap: "wrap" },
-  primaryBtn: {
-    display: "inline-block",
-    background: "#2563eb",
-    color: "#fff",
-    textDecoration: "none",
-    padding: "12px 14px",
-    borderRadius: 12,
-    fontWeight: 950,
-  },
-  secondaryBtn: {
-    display: "inline-block",
-    background: "#ffffff",
-    color: "#0f172a",
-    textDecoration: "none",
-    padding: "12px 14px",
-    borderRadius: 12,
-    fontWeight: 950,
-    border: "1px solid #e2e8f0",
-  },
+  primaryBtn: { display: "inline-block", background: "#2563eb", color: "#fff", textDecoration: "none", padding: "12px 14px", borderRadius: 12, fontWeight: 950 },
+  secondaryBtn: { display: "inline-block", background: "#ffffff", color: "#0f172a", textDecoration: "none", padding: "12px 14px", borderRadius: 12, fontWeight: 950, border: "1px solid #e2e8f0" },
 
   trustRow: { display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" },
-  trustPill: {
-    fontSize: 12,
-    fontWeight: 850,
-    color: "#0f172a",
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    padding: "8px 10px",
-    borderRadius: 999,
-  },
+  trustPill: { fontSize: 12, fontWeight: 850, color: "#0f172a", background: "#ffffff", border: "1px solid #e2e8f0", padding: "8px 10px", borderRadius: 999 },
   micro: { fontSize: 12, color: "#64748b", marginTop: 12, lineHeight: 1.6 },
 
-  heroCard: {
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 16,
-    boxShadow: "0 14px 40px rgba(15,23,42,0.08)",
-    overflow: "hidden",
-  },
+  heroCard: { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 16, boxShadow: "0 14px 40px rgba(15,23,42,0.08)", overflow: "hidden" },
   cardTop: { padding: 16, borderBottom: "1px solid #e2e8f0" },
-  cardBadge: {
-    display: "inline-block",
-    fontSize: 12,
-    fontWeight: 950,
-    background: "#eff6ff",
-    color: "#1d4ed8",
-    padding: "6px 10px",
-    borderRadius: 999,
-  },
+  cardBadge: { display: "inline-block", fontSize: 12, fontWeight: 950, background: "#eff6ff", color: "#1d4ed8", padding: "6px 10px", borderRadius: 999 },
   cardTitle: { marginTop: 10, fontSize: 18, fontWeight: 950 },
   cardSub: { marginTop: 6, fontSize: 13, color: "#64748b", lineHeight: 1.6 },
   levelList: { padding: 16, display: "flex", flexDirection: "column", gap: 12 },
@@ -530,149 +466,88 @@ const s = {
   dot: { width: 10, height: 10, borderRadius: 999, marginTop: 6 },
   levelName: { fontWeight: 950, fontSize: 13 },
   levelDesc: { fontSize: 12, color: "#64748b", marginTop: 2, lineHeight: 1.5 },
-  cardCTA: {
-    display: "block",
-    textAlign: "center",
-    padding: "14px 16px",
-    fontWeight: 950,
-    textDecoration: "none",
-    color: "#2563eb",
-    borderTop: "1px solid #e2e8f0",
-    background: "#f8fafc",
+  cardCTA: { display: "block", textAlign: "center", padding: "14px 16px", fontWeight: 950, textDecoration: "none", color: "#2563eb", borderTop: "1px solid #e2e8f0", background: "#f8fafc" },
+
+  featuredAd: {
+    marginTop: 18,
+    background: "linear-gradient(180deg, #0f172a 0%, #111827 100%)",
+    borderRadius: 18,
+    padding: 16,
+    color: "#fff",
+    boxShadow: "0 18px 50px rgba(15,23,42,0.18)",
   },
+  featuredInner: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+    gap: 14,
+    alignItems: "stretch",
+  },
+  featuredEyebrow: {
+    display: "inline-block",
+    fontSize: 11,
+    fontWeight: 950,
+    color: "#0f172a",
+    background: "#93c5fd",
+    padding: "6px 10px",
+    borderRadius: 999,
+  },
+  featuredTitle: { margin: "10px 0 0", fontSize: 26, fontWeight: 950, letterSpacing: -0.3 },
+  featuredText: { marginTop: 10, fontSize: 14, lineHeight: 1.7, color: "rgba(255,255,255,0.85)" },
+  featuredButtons: { marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" },
+  featuredBtnPrimary: { textDecoration: "none", background: "#2563eb", color: "#fff", padding: "12px 14px", borderRadius: 12, fontWeight: 950 },
+  featuredBtnSecondary: { textDecoration: "none", background: "rgba(255,255,255,0.10)", color: "#fff", padding: "12px 14px", borderRadius: 12, fontWeight: 950, border: "1px solid rgba(255,255,255,0.18)" },
+  featuredFine: { marginTop: 10, fontSize: 12, color: "rgba(255,255,255,0.7)" },
+  featuredSide: { display: "flex", alignItems: "stretch" },
+  featuredSideCard: { width: "100%", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.16)", borderRadius: 16, overflow: "hidden" },
+  featuredSideTop: { padding: 14, borderBottom: "1px solid rgba(255,255,255,0.12)" },
+  featuredSideBadge: { display: "inline-block", fontSize: 11, fontWeight: 950, background: "rgba(37,99,235,0.35)", border: "1px solid rgba(147,197,253,0.35)", padding: "6px 10px", borderRadius: 999 },
+  featuredSideTitle: { marginTop: 10, fontSize: 14, fontWeight: 950 },
+  featuredList: { margin: 0, padding: "12px 18px 14px", color: "rgba(255,255,255,0.85)", lineHeight: 1.8, fontSize: 13 },
 
   section: { marginTop: 40 },
   h2: { fontSize: 28, fontWeight: 950, margin: "0 0 10px" },
   p: { fontSize: 15, lineHeight: 1.8, color: "#475569", margin: "10px 0 0" },
 
-  grid3: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: 12,
-    marginTop: 14,
-  },
-  grid2: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 12,
-    marginTop: 14,
-  },
-  featureCard: {
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 14,
-    padding: 14,
-  },
+  // RESPONSIVE GRIDS:
+  grid3: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12, marginTop: 14 },
+  grid2: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12, marginTop: 14 },
+
+  featureCard: { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 14, padding: 14 },
   featureTitle: { fontWeight: 950, marginBottom: 6 },
   featureText: { fontSize: 13, lineHeight: 1.7, color: "#64748b" },
 
-  notice: {
-    marginTop: 14,
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 14,
-    padding: 14,
-    lineHeight: 1.7,
-    color: "#334155",
-    fontSize: 13,
-  },
+  notice: { marginTop: 14, background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 14, padding: 14, lineHeight: 1.7, color: "#334155", fontSize: 13 },
 
-  ratingCard: {
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 14,
-    padding: 14,
-  },
-  ratingTag: {
-    display: "inline-block",
-    fontWeight: 950,
-    fontSize: 12,
-    padding: "6px 10px",
-    borderRadius: 999,
-  },
+  ratingCard: { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 14, padding: 14 },
+  ratingTag: { display: "inline-block", fontWeight: 950, fontSize: 12, padding: "6px 10px", borderRadius: 999 },
   ratingText: { marginTop: 8, fontSize: 13, color: "#64748b", lineHeight: 1.7 },
 
-  ctaStrip: {
-    marginTop: 16,
-    background: "#0f172a",
-    color: "#fff",
-    borderRadius: 16,
-    padding: 14,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    flexWrap: "wrap",
-  },
+  ctaStrip: { marginTop: 16, background: "#0f172a", color: "#fff", borderRadius: 16, padding: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" },
   ctaStripText: { fontWeight: 950 },
-  ctaStripBtn: {
-    background: "#2563eb",
-    color: "#fff",
-    textDecoration: "none",
-    padding: "10px 12px",
-    borderRadius: 12,
-    fontWeight: 950,
-  },
+  ctaStripBtn: { background: "#2563eb", color: "#fff", textDecoration: "none", padding: "10px 12px", borderRadius: 12, fontWeight: 950 },
+
+  roadmapGrid: { marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 },
+  roadmapCard: { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 14, padding: 14 },
+  roadmapTop: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
+  roadmapBadge: { fontSize: 11, fontWeight: 950, background: "#eff6ff", color: "#1d4ed8", padding: "6px 10px", borderRadius: 999, border: "1px solid #dbeafe" },
+  roadmapBadgeMuted: { fontSize: 11, fontWeight: 950, background: "#f1f5f9", color: "#0f172a", padding: "6px 10px", borderRadius: 999, border: "1px solid #e2e8f0" },
+  roadmapTitle: { fontWeight: 950, color: "#0f172a" },
+  roadmapText: { marginTop: 8, fontSize: 13, color: "#64748b", lineHeight: 1.7 },
 
   privacyRow: { marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" },
-  privacyBtn: {
-    display: "inline-block",
-    background: "#ffffff",
-    color: "#0f172a",
-    textDecoration: "none",
-    padding: "12px 14px",
-    borderRadius: 12,
-    fontWeight: 950,
-    border: "1px solid #e2e8f0",
-  },
+  privacyBtn: { display: "inline-block", background: "#ffffff", color: "#0f172a", textDecoration: "none", padding: "12px 14px", borderRadius: 12, fontWeight: 950, border: "1px solid #e2e8f0" },
 
-  faq: {
-    marginTop: 10,
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 14,
-    padding: 12,
-  },
+  faq: { marginTop: 10, background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 14, padding: 12 },
   faqQ: { cursor: "pointer", fontWeight: 950 },
   faqA: { marginTop: 10, color: "#475569", lineHeight: 1.7, fontSize: 13 },
 
-  bottomCTA: {
-    marginTop: 16,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    flexWrap: "wrap",
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 16,
-    padding: 14,
-  },
+  bottomCTA: { marginTop: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 16, padding: 14 },
   bottomCTAText: { fontWeight: 950, color: "#0f172a" },
 
   footer: { borderTop: "1px solid #e2e8f0", background: "#f6f8fc" },
-  footerInner: {
-    maxWidth: 1040,
-    margin: "0 auto",
-    padding: "16px 16px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 12,
-    flexWrap: "wrap",
-  },
+  footerInner: { maxWidth: 1040, margin: "0 auto", padding: "16px 16px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" },
   footerLeft: { fontWeight: 950, lineHeight: 1.3 },
-  footerMicro: {
-    marginTop: 6,
-    fontSize: 12,
-    color: "#64748b",
-    fontWeight: 600,
-  },
+  footerMicro: { marginTop: 6, fontSize: 12, color: "#64748b", fontWeight: 600 },
   footerRight: { display: "flex", gap: 12, flexWrap: "wrap" },
-  footerLink: {
-    color: "#334155",
-    textDecoration: "none",
-    fontWeight: 850,
-    fontSize: 13,
-  },
+  footerLink: { color: "#334155", textDecoration: "none", fontWeight: 850, fontSize: 13 },
 };
