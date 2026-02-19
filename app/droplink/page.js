@@ -64,14 +64,17 @@ function isAmazonProductUrl(urlString) {
 
     if (!amazonHost) return false;
 
-    const path = u.pathname.toLowerCase();
+    const path = (u.pathname || "").toLowerCase();
+
+    // "Product-first" patterns
     const looksLikeProduct =
       path.includes("/dp/") ||
       path.includes("/gp/product/") ||
       path.includes("/gp/aw/d/");
 
-    // Keep permissive for Amazon, but still “product-first”.
-    return looksLikeProduct || true;
+    // IMPORTANT FIX:
+    // This used to be `looksLikeProduct || true` which makes validation always pass.
+    return looksLikeProduct;
   } catch {
     return false;
   }
@@ -120,7 +123,7 @@ export default function DropLinkPage() {
       try {
         sessionStorage.setItem("droplink:lastResult", JSON.stringify(payload));
       } catch {
-        // If storage fails (rare), still try to route; results page will show a fallback.
+        // ignore storage errors
       }
 
       router.push("/droplink/results");
@@ -155,8 +158,8 @@ export default function DropLinkPage() {
         <div style={styles.instructions}>
           <h1 style={styles.heroTitle}>Paste an Amazon product link.</h1>
           <p style={styles.heroSubtitle}>
-            We analyze listing, seller context, and pricing signals and return a simple rating —{" "}
-            <strong>free</strong>.
+            We analyze listing, seller context, and pricing signals and return a
+            simple rating — <strong>free</strong>.
           </p>
 
           <div style={styles.steps}>
@@ -164,16 +167,18 @@ export default function DropLinkPage() {
               <strong>1.</strong> Open the Amazon product page
             </div>
             <div style={styles.step}>
-              <strong>2.</strong> Copy the <strong>full URL</strong> from the address bar
+              <strong>2.</strong> Copy the <strong>full URL</strong> from the
+              address bar
             </div>
             <div style={styles.step}>
-              <strong>3.</strong> Paste it below and press <strong>Analyze</strong>
+              <strong>3.</strong> Paste it below and press{" "}
+              <strong>Analyze</strong>
             </div>
           </div>
 
           <div style={styles.trustNote}>
-            <strong>Note:</strong> Not affiliated with Amazon. AI can make mistakes—verify critical
-            details before purchasing.
+            <strong>Note:</strong> Not affiliated with Amazon. AI can make
+            mistakes—verify critical details before purchasing.
           </div>
         </div>
 
@@ -195,7 +200,8 @@ export default function DropLinkPage() {
             {loading ? "Analyzing..." : "Analyze Product"}
           </button>
           <p style={styles.helperText}>
-            Tip: copy the URL from the product page (address bar) and paste it here.
+            Tip: copy the URL from the product page (address bar) and paste it
+            here.
           </p>
         </form>
 
